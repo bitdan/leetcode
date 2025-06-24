@@ -55,27 +55,28 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
-public class TwoSum{
-  public static void main(String[] args) {
-       Solution solution = new TwoSum().new Solution();
-      int[] ints = solution.twoSum(new int[]{2, 7, 11, 15}, 9);
-      log.info("{}", Arrays.toString(ints));
+public class TwoSum {
+    public static void main(String[] args) {
+        Solution solution = new TwoSum().new Solution();
+        int[] ints = solution.twoSum(new int[]{2, 7, 11, 15}, 9);
+        log.info("{}", Arrays.toString(ints));
 
-  }
-  //leetcode submit region begin(Prohibit modification and deletion)
-class Solution {
-    public int[] twoSum(int[] nums, int target) {
-        Map<Integer, Integer> map = new HashMap<>();
-        for (int i = 0; i < nums.length; i++) {
-            int reamin = target - nums[i];
-            if (map.containsKey(reamin)) {
-                return new int[]{map.get(reamin), i};
-            }
-            map.put(nums[i], i);
-        }
-        return null;
     }
-}
+
+    //leetcode submit region begin(Prohibit modification and deletion)
+    class Solution {
+        public int[] twoSum(int[] nums, int target) {
+            Map<Integer, Integer> map = new HashMap<>();
+            for (int i = 0; i < nums.length; i++) {
+                int reamin = target - nums[i];
+                if (map.containsKey(reamin)) {
+                    return new int[]{map.get(reamin), i};
+                }
+                map.put(nums[i], i);
+            }
+            return null;
+        }
+    }
 //leetcode submit region end(Prohibit modification and deletion)
 
 }

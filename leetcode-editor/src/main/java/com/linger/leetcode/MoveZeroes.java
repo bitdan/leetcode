@@ -34,7 +34,7 @@
 // Related Topics 数组 双指针 👍 2665 👎 0
 
 
-package com.linger.leetcode.editor.cn;
+package com.linger.leetcode;
 
 import lombok.extern.slf4j.Slf4j;
 

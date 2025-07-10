@@ -39,7 +39,7 @@
 // Related Topics 哈希表 字符串 滑动窗口 👍 10888 👎 0
 
 
-package com.linger.leetcode.editor.cn;
+package com.linger.leetcode;
 
 import lombok.extern.slf4j.Slf4j;
 

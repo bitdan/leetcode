@@ -46,7 +46,7 @@
 // Related Topics 数组 哈希表 👍 19800 👎 0
 
 
-package com.linger.leetcode.editor.cn;
+package com.linger.leetcode;
 
 import lombok.extern.slf4j.Slf4j;
 

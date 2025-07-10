@@ -25,7 +25,7 @@ public class Lock4jConcurrencyTest {
     public void testConcurrentLocking() throws InterruptedException {
         String sku = "SKU123";
 
-        int threadCount = 2;
+        int threadCount = 10; // 模拟10个线程
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch latch = new CountDownLatch(threadCount);
 
@@ -41,11 +41,12 @@ public class Lock4jConcurrencyTest {
             }
         };
 
-        // 启动两个线程并发执行
-        executor.submit(task);
-        executor.submit(task);
+        // 启动多个线程并发执行
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(task);
+        }
 
-        // 等待线程完成
+        // 等待所有线程完成
         latch.await();
         executor.shutdown();
     }

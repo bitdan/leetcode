@@ -1,4 +1,12 @@
+server:
+  port: 9999
+
 spring:
+  # Spring Data Redis 配置
+  data:
+    redis:
+      repositories:
+        enabled: false # 项目未使用到 Spring Data Redis 的 Repository，所以直接禁用，保证启动速度
   redis:
     host: 192.168.3.188 # 地址
     port: 6379 # 端口

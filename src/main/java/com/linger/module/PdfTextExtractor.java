@@ -1,4 +1,4 @@
-package com.linger.test;
+package com.linger.module;
 
 /**
  * @version 1.0

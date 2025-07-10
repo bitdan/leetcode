@@ -1,0 +1,5 @@
+spring:
+  redis:
+    host: 192.168.3.188 # 地址
+    port: 6379 # 端口
+    database: 15 # 数据库索引

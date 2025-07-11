@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: halo-pv
+  namespace: ruoyi
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  nfs:
+    path: /nfs/halo
+    server: 139.159.140.xxx
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: halo-pvc
+  namespace: ruoyi
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: halo-deployment
+  namespace: ruoyi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: halo
+  template:
+    metadata:
+      labels:
+        app: halo
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      containers:
+        - name: halo
+          image: halohub/halo:2.18
+          ports:
+            - containerPort: 8090
+          volumeMounts:
+            - name: halo-data
+              mountPath: /root/.halo2
+          args:
+            - --spring.r2dbc.url=r2dbc:pool:mysql://mysql:3306/halo
+            - --spring.r2dbc.username=root
+            - --spring.r2dbc.password=xxx
+            - --spring.sql.init.platform=mysql
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+      restartPolicy: Always
+      volumes:
+        - name: halo-data
+          persistentVolumeClaim:
+            claimName: halo-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: halo-service
+  namespace: ruoyi
+spec:
+  selector:
+    app: halo
+  ports:
+    - protocol: TCP
+      port: 8090
+      targetPort: 8090
+  type: ClusterIP

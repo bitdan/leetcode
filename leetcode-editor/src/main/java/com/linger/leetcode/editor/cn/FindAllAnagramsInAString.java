@@ -35,7 +35,7 @@
 // Related Topics 哈希表 字符串 滑动窗口 👍 1701 👎 0
 
 
-package com.linger.leetcode;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

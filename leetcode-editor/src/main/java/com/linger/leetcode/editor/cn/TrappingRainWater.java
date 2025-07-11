@@ -32,7 +32,7 @@
 // Related Topics 栈 数组 双指针 动态规划 单调栈 👍 5750 👎 0
 
 
-package com.linger.leetcode;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

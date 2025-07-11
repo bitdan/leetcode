@@ -1,7 +1,7 @@
 package com.linger;
 
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
+
 
 /**
  * @version 1.0
@@ -29,7 +29,7 @@ public class Student implements Comparable<Student> {
 
 
     @Override
-    public int compareTo(@NotNull Student o) {
+    public int compareTo(Student o) {
         int flag = this.name.compareTo(o.name);
         if (flag == 0) {
             return this.age - o.age;

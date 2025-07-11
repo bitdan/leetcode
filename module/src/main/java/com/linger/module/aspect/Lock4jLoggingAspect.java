@@ -8,6 +8,7 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * @version 1.0
@@ -26,6 +27,7 @@ public class Lock4jLoggingAspect {
 
     @Around("lockPointcut()")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
+        log.info("🔐 Lock4j 切面执行前，是否存在事务: {}", TransactionSynchronizationManager.isActualTransactionActive());
         log.info(">>> [Lock4j] 分布式锁开始");
         Object result = joinPoint.proceed();
         log.info("<<< [Lock4j] 分布式锁结束");

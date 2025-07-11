@@ -1,4 +1,4 @@
-package com.linger;
+package com.linger.demo;
 
 import java.util.List;
 

@@ -1,4 +1,4 @@
-package com.linger;
+package com.linger.demo;
 
 import org.junit.jupiter.api.Test;
 

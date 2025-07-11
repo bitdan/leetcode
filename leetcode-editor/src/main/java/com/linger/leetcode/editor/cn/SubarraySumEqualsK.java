@@ -44,6 +44,12 @@ public class SubarraySumEqualsK {
         log.info("{}", solution.subarraySum(new int[]{1, 1, 1}, 2));
     }
 
+    /**
+     * 初始化哈希表 ：prefixSumCount 用于存储前缀和及其出现次数，初始时前缀和为0出现1次
+     * 遍历数组 ：计算当前前缀和 prefixSum
+     * 查找目标前缀和 ：检查是否存在 prefixSum - k，如果存在则增加计数
+     * 更新哈希表 ：将当前前缀和的出现次数存入哈希表
+     */
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public int subarraySum(int[] nums, int k) {

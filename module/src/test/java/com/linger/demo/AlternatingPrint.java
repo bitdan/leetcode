@@ -12,13 +12,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-/**
- * @version 1.0
- * @description concurrent
- * @date 2024/7/28 16:47:58
- */
+
 @Slf4j
-public class Concurrent {
+public class AlternatingPrint {
     public static final Object Lock = new Object();
     public static volatile int count = 0;
     public static final int max = 100;
@@ -26,16 +22,16 @@ public class Concurrent {
     private static final AtomicInteger currentNum = new AtomicInteger(1);
     private static final String[] LETTERS = {"A", "B", "C"};
     private static Boolean isOdd = true;
-    private static volatile Concurrent singleton;
+    private static volatile AlternatingPrint singleton;
 
-    private Concurrent() {
+    private AlternatingPrint() {
     }
 
-    public static Concurrent getSingleton() {
+    public static AlternatingPrint getSingleton() {
         if (singleton == null) {
-            synchronized (Concurrent.class) {
+            synchronized (AlternatingPrint.class) {
                 if (singleton == null) {
-                    singleton = new Concurrent();
+                    singleton = new AlternatingPrint();
                 }
             }
         }
@@ -114,13 +110,13 @@ public class Concurrent {
     private ArrayList<Integer> list = new ArrayList<>();
 
     public void add(int value) {
-        synchronized (Concurrent.class) {
+        synchronized (AlternatingPrint.class) {
             list.add(value);
         }
     }
 
     public int get(int index) {
-        synchronized (Concurrent.class) {
+        synchronized (AlternatingPrint.class) {
             return list.get(index);
         }
     }

@@ -6,29 +6,44 @@ package com.linger.module;
  * @date 2025/7/9 14:42:29
  */
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 
 import java.io.InputStream;
 import java.net.URL;
+import java.util.ArrayList;
 
+@Slf4j
 public class PdfTextExtractor {
 
-    public static String extractTextFromUrl(String pdfUrl) {
-        try (InputStream in = new URL(pdfUrl).openStream();
+    public static void extractTextFromUrl(String url, String postalCode) {
+        ArrayList<Integer> notfoundMatch = new ArrayList<>();
+        try (InputStream in = new URL(url).openStream();
              PDDocument document = PDDocument.load(in)) {
 
-            PDFTextStripper stripper = new PDFTextStripper();
-            return stripper.getText(document);
+            int totalPages = document.getNumberOfPages();
+
+            for (int page = 1; page <= totalPages; page++) {
+                PDFTextStripper stripper = new PDFTextStripper();
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+
+                String pageText = stripper.getText(document);
+                if (!pageText.contains(postalCode)) {
+                    notfoundMatch.add(page);
+                }
+            }
 
         } catch (Exception e) {
-            throw new RuntimeException("提取 PDF 内容失败: " + e.getMessage(), e);
+            log.error("提取PDF内容失败:", e);
+        } finally {
+            log.info("notfoundMatch is : {}", notfoundMatch);
         }
     }
 
     public static void main(String[] args) {
         String url = "https://img.botaili.com/erp/2025/06/03/FBA15KF64HQM_PackageLabel_Thermal_NonPCP.pdf";
-        String text = extractTextFromUrl(url);
-        System.out.println("提取内容：\n" + text);
+        extractTextFromUrl(url, "63801");
     }
 }

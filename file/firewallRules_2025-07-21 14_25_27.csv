@@ -1,0 +1,33 @@
+﻿CidrBlock,Protocol,Port,Action,FirewallRuleDescription
+::/0,ICMPv6,ALL,ACCEPT,通过Ping测试IPv6网络连通性 (放通ALL ICMPv6)
+::/0,TCP,443,ACCEPT,Web服务HTTPS (443)，如 Apache、Nginx
+::/0,UDP,3389,ACCEPT,Windows远程桌面登录优化
+::/0,TCP,3389,ACCEPT,Windows远程桌面登录
+::/0,TCP,22,ACCEPT,Linux SSH登录
+::/0,TCP,80,ACCEPT,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,TCP,8080,ACCEPT,ruoyi
+0.0.0.0/0,TCP,6379,ACCEPT,redis
+0.0.0.0/0,UDP,111,ACCEPT,nfs
+0.0.0.0/0,TCP,"111,2049",ACCEPT,nfs
+0.0.0.0/0,UDP,53,ACCEPT,
+0.0.0.0/0,TCP,3306,ACCEPT,MySQL服务 (3306)
+0.0.0.0/0,TCP,"8123,9000",ACCEPT,clickhouse
+0.0.0.0/0,TCP,"2379,2380",ACCEPT,etcd
+0.0.0.0/0,TCP,"10909,10911,10912,19876,9876",ACCEPT,RocketMq
+0.0.0.0/0,TCP,11777,ACCEPT,1panel
+0.0.0.0/0,UDP,8472,ACCEPT,
+0.0.0.0/0,TCP,30000-32767,ACCEPT,nodepod
+0.0.0.0/0,ICMP,ALL,ACCEPT,ping
+0.0.0.0/0,TCP,53,ACCEPT,dns
+0.0.0.0/0,TCP,8472,ACCEPT,Overlay 
+0.0.0.0/0,TCP,10257,ACCEPT,kube-controller-manager
+0.0.0.0/0,TCP,10259,ACCEPT,kube-scheduler
+0.0.0.0/0,TCP,2379-2380,ACCEPT,etcd server client API
+0.0.0.0/0,TCP,10250,ACCEPT,Kubelet API
+0.0.0.0/0,TCP,6443,ACCEPT,kubectl-conf
+0.0.0.0/0,TCP,9100,ACCEPT,node_exporter
+0.0.0.0/0,TCP,822,ACCEPT,ssh
+0.0.0.0/0,TCP,9090,ACCEPT,Kubernetes-dashboard 
+0.0.0.0/0,TCP,80,ACCEPT,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,TCP,443,ACCEPT,Web服务HTTPS (443)，如 Apache、Nginx
+0.0.0.0/0,TCP,22,ACCEPT,Linux SSH登录

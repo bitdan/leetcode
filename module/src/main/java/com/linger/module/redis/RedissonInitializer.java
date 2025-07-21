@@ -1,4 +1,4 @@
-package com.linger.module.commandLineRunner;
+package com.linger.module.redis;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,13 +13,13 @@ import java.util.stream.IntStream;
 
 /**
  * @version 1.0
- * @description TaskInitializer
+ * @description RedissonInitializer
  * @date 2025/7/21 17:38:07
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class TaskInitializer implements CommandLineRunner {
+public class RedissonInitializer implements CommandLineRunner {
 
     private final RedissonClient redissonClient;
 

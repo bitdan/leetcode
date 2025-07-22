@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -88,5 +90,70 @@ public class RedissonService {
         }, "delay-consumer").start();
     }
 
+
+    // Lua脚本内容
+    private static final String PURCHASE_SCRIPT =
+            "local userKey = KEYS[1]\n" +
+                    "local limit = tonumber(ARGV[1])\n" +
+                    "local expiry = tonumber(ARGV[2])\n" +
+                    "\n" +
+                    "local current = redis.call('GET', userKey)\n" +
+                    "if current == false then\n" +
+                    "    current = 0\n" +
+                    "else\n" +
+                    "    current = tonumber(current)\n" +
+                    "end\n" +
+                    "\n" +
+                    "if current >= limit then\n" +
+                    "    return 0\n" +
+                    "end\n" +
+                    "\n" +
+                    "redis.call('INCR', userKey)\n" +
+                    "if current == 0 then\n" +
+                    "    redis.call('EXPIRE', userKey, expiry)\n" +
+                    "end\n" +
+                    "return 1";
+
+    /**
+     * 尝试购买商品 - Lua脚本原子操作
+     *
+     * @param userId        用户ID
+     * @param productId     商品ID
+     * @param purchaseLimit 用户限购数量
+     * @param expirySeconds 过期时间（秒）
+     * @return 是否购买成功
+     */
+    public boolean purchaseItem(Long userId, String productId, int purchaseLimit, int expirySeconds) {
+        String key = getPurchaseKey(userId, productId);
+        Long result = redissonClient.getScript().eval(
+                RScript.Mode.READ_WRITE,
+                PURCHASE_SCRIPT,
+                RScript.ReturnType.INTEGER,
+                Collections.singletonList(key),
+                purchaseLimit, expirySeconds
+        );
+        return Objects.equals(result, 1L);
+    }
+
+
+    /**
+     * 查询用户已购买数量
+     */
+    public long getUserPurchaseCount(Long userId, String productId) {
+        String key = getPurchaseKey(userId, productId);
+        return redissonClient.getAtomicLong(key).get();
+    }
+
+    /**
+     * 重置用户购买记录（测试用）
+     */
+    public void resetUserPurchase(Long userId, String productId) {
+        String key = getPurchaseKey(userId, productId);
+        redissonClient.getBucket(key).delete();
+    }
+
+    private String getPurchaseKey(Long userId, String productId) {
+        return String.format("live:user:%s:product:%s", userId, productId);
+    }
 
 }

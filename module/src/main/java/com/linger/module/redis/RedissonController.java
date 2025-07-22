@@ -29,26 +29,4 @@ public class RedissonController {
         return ResponseEntity.ok("消息已延时发送");
     }
 
-    private static final int DEFAULT_EXPIRY = 24 * 60 * 60; // 24小时
-
-
-    @PostMapping("/purchase")
-    public ResponseEntity<String> purchaseItem(
-            @RequestParam Long userId,
-            @RequestParam String productId,
-            @RequestParam(defaultValue = "1") int purchaseLimit) {
-
-        boolean success = redissonService.purchaseItem(
-                userId,
-                productId,
-                purchaseLimit,
-                DEFAULT_EXPIRY
-        );
-
-        if (success) {
-            return ResponseEntity.ok("购买成功");
-        } else {
-            return ResponseEntity.badRequest().body("购买失败：已达购买上限");
-        }
-    }
 }

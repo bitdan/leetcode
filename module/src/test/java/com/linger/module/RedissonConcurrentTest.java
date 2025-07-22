@@ -25,6 +25,7 @@ import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.AssertionsForClassTypes.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
@@ -74,7 +75,6 @@ public class RedissonConcurrentTest {
     private static final int REQUESTS_PER_THREAD = 100;
     private static final String TEST_PRODUCT = "P20240722-HotSell";
 
-
     // 生成测试用户ID
     private List<Long> testUserIds;
 
@@ -89,6 +89,7 @@ public class RedissonConcurrentTest {
         for (Long userId : testUserIds) {
             redissonService.resetUserPurchase(userId, TEST_PRODUCT);
         }
+        redissonService.resetGlobalSoldCount(TEST_PRODUCT);
     }
 
     /**
@@ -96,7 +97,8 @@ public class RedissonConcurrentTest {
      */
     @Test
     void testConcurrentSingleItemLimit() throws InterruptedException {
-        final int ITEM_LIMIT = 1;
+        final int PER_USER_LIMIT = 1;
+        final int GLOBAL_LIMIT = 10000; // 全局库存限制
 
         AtomicInteger successfulPurchases = new AtomicInteger();
         AtomicInteger failedPurchases = new AtomicInteger();
@@ -112,7 +114,8 @@ public class RedissonConcurrentTest {
                     // 随机选择用户
                     Long userId = testUserIds.get(random.nextInt(USER_COUNT));
 
-                    if (redissonService.purchaseItem(userId, TEST_PRODUCT, ITEM_LIMIT, 3600)) {
+                    if (redissonService.purchaseItem(userId, TEST_PRODUCT,
+                            PER_USER_LIMIT, GLOBAL_LIMIT, 3600)) {
                         successfulPurchases.incrementAndGet();
                     } else {
                         failedPurchases.incrementAndGet();
@@ -126,18 +129,25 @@ public class RedissonConcurrentTest {
         latch.await();
         executor.shutdown();
 
+        // 获取全局库存
+        long globalSold = redissonService.getGlobalSoldCount(TEST_PRODUCT);
+
         System.out.println("================ 测试结果 =================");
         System.out.println("总请求数: " + (THREAD_COUNT * REQUESTS_PER_THREAD));
         System.out.println("成功购买数: " + successfulPurchases.get());
         System.out.println("失败购买数: " + failedPurchases.get());
+        System.out.println("Redis全局库存: " + globalSold);
         System.out.println("==========================================");
 
         // 验证每个用户的购买数量不超过1
         testUserIds.stream()
                 .map(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
-                .filter(count -> count > ITEM_LIMIT)
+                .filter(count -> count > PER_USER_LIMIT)
                 .findAny()
                 .ifPresent(count -> fail("存在用户购买数超过限制: " + count));
+
+        // 验证全局库存不超过限制
+        assertTrue(globalSold <= GLOBAL_LIMIT, "全局库存超过限制: " + globalSold);
     }
 
     /**
@@ -148,7 +158,7 @@ public class RedissonConcurrentTest {
         final int GLOBAL_LIMIT = 10000;
         final int PER_USER_LIMIT = 5;
 
-        AtomicInteger totalItemsSold = new AtomicInteger();
+        AtomicInteger successfulPurchases = new AtomicInteger();
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch latch = new CountDownLatch(THREAD_COUNT * REQUESTS_PER_THREAD);
 
@@ -157,8 +167,9 @@ public class RedissonConcurrentTest {
             executor.execute(() -> {
                 try {
                     Long userId = testUserIds.get(new Random().nextInt(USER_COUNT));
-                    if (redissonService.purchaseItem(userId, TEST_PRODUCT, PER_USER_LIMIT, 3600)) {
-                        totalItemsSold.incrementAndGet();
+                    if (redissonService.purchaseItem(userId, TEST_PRODUCT,
+                            PER_USER_LIMIT, GLOBAL_LIMIT, 3600)) {
+                        successfulPurchases.incrementAndGet();
                     }
                 } finally {
                     latch.countDown();
@@ -174,9 +185,13 @@ public class RedissonConcurrentTest {
                 .mapToLong(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
                 .sum();
 
+        // 获取全局库存
+        long globalSold = redissonService.getGlobalSoldCount(TEST_PRODUCT);
+
         System.out.println("================ 详细测试结果 =================");
         System.out.println("预期最大销售数: " + GLOBAL_LIMIT);
         System.out.println("实际销售总数: " + actualSold);
+        System.out.println("Redis全局库存: " + globalSold);
         System.out.println("未达标差值: " + (GLOBAL_LIMIT - actualSold));
 
         // 添加用户购买分布统计
@@ -198,8 +213,56 @@ public class RedissonConcurrentTest {
 
         System.out.println("\n超额购买用户数: " + usersOverLimit);
         System.out.println("==========================================");
+
+        // 关键断言
+        assertTrue(actualSold <= GLOBAL_LIMIT, "销售总数超过限制: " + actualSold);
+        assertEquals(0, usersOverLimit, "存在超额购买用户");
+        assertEquals(actualSold, globalSold, "用户购买总数与全局库存不一致");
     }
 
+    /**
+     * 边界测试：库存为0时拒绝所有购买请求
+     */
+    @Test
+    void testZeroInventory() throws InterruptedException {
+        final int GLOBAL_LIMIT = 0; // 库存为0
+        final int PER_USER_LIMIT = 5;
+
+        AtomicInteger successfulPurchases = new AtomicInteger();
+        ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
+        CountDownLatch latch = new CountDownLatch(THREAD_COUNT * REQUESTS_PER_THREAD);
+
+        for (int i = 0; i < THREAD_COUNT * REQUESTS_PER_THREAD; i++) {
+            executor.execute(() -> {
+                try {
+                    Long userId = testUserIds.get(new Random().nextInt(USER_COUNT));
+                    if (redissonService.purchaseItem(userId, TEST_PRODUCT,
+                            PER_USER_LIMIT, GLOBAL_LIMIT, 3600)) {
+                        successfulPurchases.incrementAndGet();
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+        executor.shutdown();
+
+        long globalSold = redissonService.getGlobalSoldCount(TEST_PRODUCT);
+
+        System.out.println("================ 零库存测试结果 =================");
+        System.out.println("成功购买数: " + successfulPurchases.get());
+        System.out.println("Redis全局库存: " + globalSold);
+        System.out.println("==========================================");
+
+        assertEquals(0, successfulPurchases.get(), "零库存下不应有成功购买");
+        assertEquals(0, globalSold, "全局库存应为0");
+    }
+
+    /**
+     * 精确边界测试：库存刚好满足所有请求
+     */
     @Test
     void testPreciseGlobalLimitAtBoundary() throws InterruptedException {
         final int GLOBAL_LIMIT = 1000;
@@ -209,7 +272,7 @@ public class RedissonConcurrentTest {
         // 重置全局库存
         redissonService.resetGlobalSoldCount(TEST_PRODUCT);
 
-        AtomicInteger actualSold = new AtomicInteger();
+        AtomicInteger successfulPurchases = new AtomicInteger();
         ExecutorService executor = Executors.newWorkStealingPool(THREAD_COUNT);
 
         // 精确请求数量 = 库存上限 * 2 (确保超出)
@@ -231,7 +294,7 @@ public class RedissonConcurrentTest {
                             PER_USER_LIMIT,
                             GLOBAL_LIMIT,
                             3600)) {
-                        actualSold.incrementAndGet();
+                        successfulPurchases.incrementAndGet();
                     }
                 } finally {
                     latch.countDown();
@@ -248,12 +311,12 @@ public class RedissonConcurrentTest {
                 .mapToLong(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
                 .sum();
 
-        System.out.println("================ 修正边界测试结果 =================");
+        System.out.println("================ 边界测试结果 =================");
         System.out.println("预期最大销售数: " + GLOBAL_LIMIT);
         System.out.println("实际售出总数: " + redisGlobalCount);
-        System.out.println("Redis全局库存: " + redisGlobalCount);
         System.out.println("用户购买总数: " + userSumCount);
-        System.out.println("实际成功请求数: " + actualSold.get());
+        System.out.println("实际成功请求数: " + successfulPurchases.get());
+        System.out.println("==========================================");
 
         // 关键断言
         assertTrue(redisGlobalCount <= GLOBAL_LIMIT,
@@ -262,13 +325,15 @@ public class RedissonConcurrentTest {
         assertTrue(userSumCount <= GLOBAL_LIMIT,
                 "用户购买总数超过限制: " + userSumCount);
 
+        assertEquals(redisGlobalCount, userSumCount,
+                "全局库存与用户购买总数不一致: " + redisGlobalCount + " vs " + userSumCount);
+
         // 验证无用户超限
         testUserIds.stream()
-                .map(userId -> (Number) redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
-                .filter(count -> count.intValue() > PER_USER_LIMIT)
+                .map(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .filter(count -> count > PER_USER_LIMIT)
                 .findAny()
                 .ifPresent(count -> fail("用户超限购买: " + count));
-
     }
 
     /**
@@ -278,6 +343,7 @@ public class RedissonConcurrentTest {
     void benchmarkPerformance() throws InterruptedException {
         final int USER_SAMPLE_SIZE = 100;
         final int REQUESTS = 10_000;
+        final int GLOBAL_LIMIT = 20000; // 设置足够大的库存
 
         ExecutorService executor = Executors.newFixedThreadPool(50);
         CountDownLatch latch = new CountDownLatch(REQUESTS);
@@ -288,7 +354,8 @@ public class RedissonConcurrentTest {
             Long userId = testUserIds.get(i % USER_SAMPLE_SIZE);
             executor.execute(() -> {
                 try {
-                    redissonService.purchaseItem(userId, TEST_PRODUCT, 5, 3600);
+                    // 使用带全局库存的购买方法
+                    redissonService.purchaseItem(userId, TEST_PRODUCT, 5, GLOBAL_LIMIT, 3600);
                 } finally {
                     latch.countDown();
                 }
@@ -304,6 +371,64 @@ public class RedissonConcurrentTest {
         System.out.println("总耗时: " + duration + "ms");
         System.out.println("QPS: " + (REQUESTS / (duration / 1000.0)) + "/秒");
         System.out.println("=========================================");
+    }
+
+    /**
+     * 高并发一致性测试
+     */
+    @Test
+    void testConcurrentConsistency() throws InterruptedException {
+        final int GLOBAL_LIMIT = 5000;
+        final int PER_USER_LIMIT = 3;
+        final int USER_COUNT = 50000;
+        final int REQUESTS = 100000;
+
+        // 重置所有状态
+        setUp();
+
+        AtomicInteger successfulPurchases = new AtomicInteger();
+        ExecutorService executor = Executors.newWorkStealingPool(200);
+        CountDownLatch latch = new CountDownLatch(REQUESTS);
+
+        Random random = new Random();
+
+        for (int i = 0; i < REQUESTS; i++) {
+            executor.execute(() -> {
+                try {
+                    Long userId = testUserIds.get(random.nextInt(USER_COUNT));
+                    if (redissonService.purchaseItem(userId, TEST_PRODUCT,
+                            PER_USER_LIMIT, GLOBAL_LIMIT, 3600)) {
+                        successfulPurchases.incrementAndGet();
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+        executor.shutdown();
+
+        // 验证最终一致性
+        long redisGlobal = redissonService.getGlobalSoldCount(TEST_PRODUCT);
+        long userSum = testUserIds.stream()
+                .mapToLong(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .sum();
+        List<Long> overPurchases = testUserIds.stream()
+                .map(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .filter(count -> count > PER_USER_LIMIT)
+                .collect(Collectors.toList());
+
+        System.out.println("============= 最终一致性验证 =============");
+        System.out.println("Redis全局库存: " + redisGlobal);
+        System.out.println("用户购买合计: " + userSum);
+        System.out.println("超购用户数: " + overPurchases.size());
+        System.out.println("========================================");
+
+        // 关键断言
+        assertEquals(redisGlobal, userSum, "全局库存与用户购买不一致");
+        assertTrue(overPurchases.isEmpty(), "存在超购用户: " + overPurchases.size());
+        assertTrue(userSum <= GLOBAL_LIMIT, "总购买量超过限制");
     }
 }
 

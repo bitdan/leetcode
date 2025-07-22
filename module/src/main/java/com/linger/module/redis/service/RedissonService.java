@@ -11,7 +11,6 @@ import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -92,72 +91,7 @@ public class RedissonService {
     }
 
 
-    // Lua脚本内容
-    private static final String PURCHASE_SCRIPT =
-            "local userKey = KEYS[1]\n" +
-                    "local limit = tonumber(ARGV[1])\n" +
-                    "local expiry = tonumber(ARGV[2])\n" +
-                    "\n" +
-                    "local current = redis.call('GET', userKey)\n" +
-                    "if current == false then\n" +
-                    "    current = 0\n" +
-                    "else\n" +
-                    "    current = tonumber(current)\n" +
-                    "end\n" +
-                    "\n" +
-                    "if current >= limit then\n" +
-                    "    return 0\n" +
-                    "end\n" +
-                    "\n" +
-                    "redis.call('INCR', userKey)\n" +
-                    "if current == 0 then\n" +
-                    "    redis.call('EXPIRE', userKey, expiry)\n" +
-                    "end\n" +
-                    "return 1";
-
-    /**
-     * 尝试购买商品 - Lua脚本原子操作
-     *
-     * @param userId        用户ID
-     * @param productId     商品ID
-     * @param purchaseLimit 用户限购数量
-     * @param expirySeconds 过期时间（秒）
-     * @return 是否购买成功
-     */
-    public boolean purchaseItem(Long userId, String productId, int purchaseLimit, int expirySeconds) {
-        String key = getPurchaseKey(userId, productId);
-        Long result = redissonClient.getScript().eval(
-                RScript.Mode.READ_WRITE,
-                PURCHASE_SCRIPT,
-                RScript.ReturnType.INTEGER,
-                Collections.singletonList(key),
-                purchaseLimit, expirySeconds
-        );
-        return Objects.equals(result, 1L);
-    }
-
-
-    /**
-     * 查询用户已购买数量
-     */
-    public long getUserPurchaseCount(Long userId, String productId) {
-        String key = getPurchaseKey(userId, productId);
-        return redissonClient.getAtomicLong(key).get();
-    }
-
-    /**
-     * 重置用户购买记录（测试用）
-     */
-    public void resetUserPurchase(Long userId, String productId) {
-        String key = getPurchaseKey(userId, productId);
-        redissonClient.getBucket(key).delete();
-    }
-
-    private String getPurchaseKey(Long userId, String productId) {
-        return String.format("live:user:%s:product:%s", userId, productId);
-    }
-
-
+    // Lua脚本：个人限购+全局库存控制
     private static final String PURCHASE_SCRIPT_WITH_GLOBAL_LIMIT =
             "local userKey = KEYS[1]\n" +
                     "local globalKey = KEYS[2]\n" +
@@ -186,29 +120,69 @@ public class RedissonService {
                     "end\n" +
                     "return 1";
 
+    /**
+     * 尝试购买商品（带全局库存控制）
+     *
+     * @param userId        用户ID
+     * @param productId     商品ID
+     * @param perUserLimit  个人限购数量
+     * @param globalLimit   全局库存限制
+     * @param expirySeconds 过期时间（秒）
+     * @return 是否购买成功
+     */
     public boolean purchaseItem(Long userId, String productId,
                                 int perUserLimit, int globalLimit,
                                 int expirySeconds) {
-        String userKey = "live:user:" + userId + ":product:" + productId;
-        String globalKey = "live:product:" + productId + ":global";
+        String userKey = getPurchaseKey(userId, productId);
+        String globalKey = getGlobalKey(productId);
 
-        Long eval = redissonClient.getScript().eval(
+        Long result = redissonClient.getScript().eval(
                 RScript.Mode.READ_WRITE,
                 PURCHASE_SCRIPT_WITH_GLOBAL_LIMIT,
                 RScript.ReturnType.INTEGER,
                 Arrays.asList(userKey, globalKey),
                 perUserLimit, globalLimit, expirySeconds
         );
-        return Objects.equals(eval, 1L);
+        return Objects.equals(result, 1L);
     }
 
-    public long getGlobalSoldCount(String productId) {
-        String key = "live:product:" + productId + ":global";
+    /**
+     * 查询用户已购买数量
+     */
+    public long getUserPurchaseCount(Long userId, String productId) {
+        String key = getPurchaseKey(userId, productId);
         return redissonClient.getAtomicLong(key).get();
     }
 
-    public void resetGlobalSoldCount(String productId) {
-        String key = "live:product:" + productId + ":global";
+    /**
+     * 查询全局已售数量
+     */
+    public long getGlobalSoldCount(String productId) {
+        String key = getGlobalKey(productId);
+        return redissonClient.getAtomicLong(key).get();
+    }
+
+    /**
+     * 重置用户购买记录（测试用）
+     */
+    public void resetUserPurchase(Long userId, String productId) {
+        String key = getPurchaseKey(userId, productId);
         redissonClient.getBucket(key).delete();
+    }
+
+    /**
+     * 重置全局库存（测试用）
+     */
+    public void resetGlobalSoldCount(String productId) {
+        String key = getGlobalKey(productId);
+        redissonClient.getBucket(key).delete();
+    }
+
+    private String getPurchaseKey(Long userId, String productId) {
+        return String.format("live:user:%s:product:%s", userId, productId);
+    }
+
+    private String getGlobalKey(String productId) {
+        return String.format("live:product:%s:global", productId);
     }
 }

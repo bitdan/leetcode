@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -156,4 +157,58 @@ public class RedissonService {
         return String.format("live:user:%s:product:%s", userId, productId);
     }
 
+
+    private static final String PURCHASE_SCRIPT_WITH_GLOBAL_LIMIT =
+            "local userKey = KEYS[1]\n" +
+                    "local globalKey = KEYS[2]\n" +
+                    "local perUserLimit = tonumber(ARGV[1])\n" +
+                    "local globalLimit = tonumber(ARGV[2])\n" +
+                    "local expiry = tonumber(ARGV[3])\n" +
+                    "\n" +
+                    "local userCurrent = redis.call('GET', userKey) or '0'\n" +
+                    "userCurrent = tonumber(userCurrent)\n" +
+                    "\n" +
+                    "local globalCurrent = redis.call('GET', globalKey) or '0'\n" +
+                    "globalCurrent = tonumber(globalCurrent)\n" +
+                    "\n" +
+                    "if userCurrent >= perUserLimit or globalCurrent >= globalLimit then\n" +
+                    "    return 0\n" +
+                    "end\n" +
+                    "\n" +
+                    "redis.call('INCR', userKey)\n" +
+                    "if userCurrent == 0 then\n" +
+                    "    redis.call('EXPIRE', userKey, expiry)\n" +
+                    "end\n" +
+                    "\n" +
+                    "redis.call('INCR', globalKey)\n" +
+                    "if globalCurrent == 0 then\n" +
+                    "    redis.call('EXPIRE', globalKey, expiry)\n" +
+                    "end\n" +
+                    "return 1";
+
+    public boolean purchaseItem(Long userId, String productId,
+                                int perUserLimit, int globalLimit,
+                                int expirySeconds) {
+        String userKey = "live:user:" + userId + ":product:" + productId;
+        String globalKey = "live:product:" + productId + ":global";
+
+        Long eval = redissonClient.getScript().eval(
+                RScript.Mode.READ_WRITE,
+                PURCHASE_SCRIPT_WITH_GLOBAL_LIMIT,
+                RScript.ReturnType.INTEGER,
+                Arrays.asList(userKey, globalKey),
+                perUserLimit, globalLimit, expirySeconds
+        );
+        return Objects.equals(eval, 1L);
+    }
+
+    public long getGlobalSoldCount(String productId) {
+        String key = "live:product:" + productId + ":global";
+        return redissonClient.getAtomicLong(key).get();
+    }
+
+    public void resetGlobalSoldCount(String productId) {
+        String key = "live:product:" + productId + ":global";
+        redissonClient.getBucket(key).delete();
+    }
 }

@@ -11,6 +11,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -24,6 +25,7 @@ import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.AssertionsForClassTypes.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 /**
@@ -196,6 +198,77 @@ public class RedissonConcurrentTest {
 
         System.out.println("\n超额购买用户数: " + usersOverLimit);
         System.out.println("==========================================");
+    }
+
+    @Test
+    void testPreciseGlobalLimitAtBoundary() throws InterruptedException {
+        final int GLOBAL_LIMIT = 1000;
+        final int PER_USER_LIMIT = 10;
+        final int USER_COUNT = 10000;
+
+        // 重置全局库存
+        redissonService.resetGlobalSoldCount(TEST_PRODUCT);
+
+        AtomicInteger actualSold = new AtomicInteger();
+        ExecutorService executor = Executors.newWorkStealingPool(THREAD_COUNT);
+
+        // 精确请求数量 = 库存上限 * 2 (确保超出)
+        int totalRequests = GLOBAL_LIMIT * 2;
+        CountDownLatch latch = new CountDownLatch(totalRequests);
+
+        // 使用固定用户池，确保用户重复尝试购买
+        List<Long> testUserPool = testUserIds.subList(0, USER_COUNT);
+        Collections.shuffle(testUserPool);
+
+        for (int i = 0; i < totalRequests; i++) {
+            // 循环使用用户ID
+            Long userId = testUserPool.get(i % testUserPool.size());
+            executor.submit(() -> {
+                try {
+                    if (redissonService.purchaseItem(
+                            userId,
+                            TEST_PRODUCT,
+                            PER_USER_LIMIT,
+                            GLOBAL_LIMIT,
+                            3600)) {
+                        actualSold.incrementAndGet();
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+        executor.shutdown();
+
+        // 验证全局库存
+        long redisGlobalCount = redissonService.getGlobalSoldCount(TEST_PRODUCT);
+        long userSumCount = testUserIds.stream()
+                .mapToLong(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .sum();
+
+        System.out.println("================ 修正边界测试结果 =================");
+        System.out.println("预期最大销售数: " + GLOBAL_LIMIT);
+        System.out.println("实际售出总数: " + redisGlobalCount);
+        System.out.println("Redis全局库存: " + redisGlobalCount);
+        System.out.println("用户购买总数: " + userSumCount);
+        System.out.println("实际成功请求数: " + actualSold.get());
+
+        // 关键断言
+        assertTrue(redisGlobalCount <= GLOBAL_LIMIT,
+                "Redis全局库存超过限制: " + redisGlobalCount);
+
+        assertTrue(userSumCount <= GLOBAL_LIMIT,
+                "用户购买总数超过限制: " + userSumCount);
+
+        // 验证无用户超限
+        testUserIds.stream()
+                .map(userId -> (Number) redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .filter(count -> count.intValue() > PER_USER_LIMIT)
+                .findAny()
+                .ifPresent(count -> fail("用户超限购买: " + count));
+
     }
 
     /**

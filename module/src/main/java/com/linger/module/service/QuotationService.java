@@ -6,5 +6,6 @@ package com.linger.module.service;
  * @date 2025/7/10 09:56:52
  */
 public interface QuotationService {
+
     void createQuotation(String materialSku);
 }

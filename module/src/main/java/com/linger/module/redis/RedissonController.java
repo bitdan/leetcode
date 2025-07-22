@@ -16,17 +16,16 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/redis")
 public class RedissonController {
 
-    private final RedissonService redissonTaskService;
+    private final RedissonService redissonService;
 
     @GetMapping("/grabTask")
     public String grab(@RequestParam String userId) {
-        return redissonTaskService.grabTask(userId);
+        return redissonService.grabTask(userId);
     }
-
 
     @PostMapping("/push")
     public ResponseEntity<String> pushDelayMessage(@RequestBody DelayMessageRequest request) {
-        redissonTaskService.sendMsg(request);
+        redissonService.sendMsg(request);
         return ResponseEntity.ok("消息已延时发送");
     }
 }

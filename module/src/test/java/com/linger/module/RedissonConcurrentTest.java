@@ -380,8 +380,10 @@ public class RedissonConcurrentTest {
     void testConcurrentConsistency() throws InterruptedException {
         final int GLOBAL_LIMIT = 5000;
         final int PER_USER_LIMIT = 3;
-        final int USER_COUNT = 50000;
         final int REQUESTS = 100000;
+
+        // 使用动态用户池大小
+        final int USER_POOL_SIZE = testUserIds.size();
 
         // 重置所有状态
         setUp();
@@ -395,11 +397,14 @@ public class RedissonConcurrentTest {
         for (int i = 0; i < REQUESTS; i++) {
             executor.execute(() -> {
                 try {
-                    Long userId = testUserIds.get(random.nextInt(USER_COUNT));
+                    // 使用正确的用户池大小
+                    Long userId = testUserIds.get(random.nextInt(USER_POOL_SIZE));
                     if (redissonService.purchaseItem(userId, TEST_PRODUCT,
                             PER_USER_LIMIT, GLOBAL_LIMIT, 3600)) {
                         successfulPurchases.incrementAndGet();
                     }
+                } catch (Exception e) {
+                    System.err.println("Error in purchase: " + e.getMessage());
                 } finally {
                     latch.countDown();
                 }

@@ -39,7 +39,7 @@ public class RedissonConcurrentTest {
     @Autowired
     private RedissonService redissonService;
 
-    private final String url = "http://localhost:9999/api/grabTask";
+    private final String url = "http://localhost:9999/redis/grabTask";
 
     @Test
     public void testConcurrentGrabWithCompletableFuture() {

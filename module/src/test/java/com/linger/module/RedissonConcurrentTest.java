@@ -2,15 +2,14 @@ package com.linger.module;
 
 
 import com.linger.module.redis.service.RedissonService;
+import com.linger.module.util.HttpUtil;
+import okhttp3.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -48,25 +47,26 @@ public class RedissonConcurrentTest {
 
         List<CompletableFuture<Void>> futures = IntStream.range(0, threadCount)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
+                    String userId = "user" + i;
+
+                    // 使用 UriComponentsBuilder 构建完整 URL
+                    String fullUrl = UriComponentsBuilder.fromHttpUrl(url)
+                            .queryParam("userId", userId)
+                            .build()
+                            .toUriString();
+
                     try {
-                        String userId = "user" + i;
-                        String fullUrl = url + "?userId=" + userId;
-
-                        HttpURLConnection conn = (HttpURLConnection) new URL(fullUrl).openConnection();
-                        conn.setRequestMethod("GET");
-                        conn.setDoOutput(true);
-
-                        int responseCode = conn.getResponseCode();
-                        String body = new BufferedReader(new InputStreamReader(conn.getInputStream()))
-                                .lines().collect(Collectors.joining("\n"));
+                        Response response = HttpUtil.doGet(fullUrl, null);
+                        int responseCode = response.code();
+                        String body = response.body() != null ? response.body().string() : "";
 
                         System.out.println("用户 " + userId + " => 响应码: " + responseCode + "，内容: " + body);
+                        response.close();
                     } catch (Exception e) {
-                        System.err.println("用户 user" + i + " 请求异常：" + e.getMessage());
+                        System.err.println("用户 " + userId + " 请求异常：" + e.getMessage());
                     }
                 })).collect(Collectors.toList());
 
-        // 等待所有并发任务完成
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 

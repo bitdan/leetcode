@@ -1,6 +1,7 @@
 package com.linger.module.coupon.handler;
 
 import com.linger.module.coupon.model.CouponContext;
+import com.linger.module.coupon.model.CouponType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -17,7 +18,7 @@ public class NoThresholdHandler extends AbstractCouponHandler {
     @Override
     protected boolean canApply(CouponContext context) {
         return context.getOrder().getCoupons().stream()
-                .filter(c -> "NO_THRESHOLD".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.NO_THRESHOLD)
                 .anyMatch(c -> !context.getAppliedCoupons().contains(c));
     }
 
@@ -26,7 +27,7 @@ public class NoThresholdHandler extends AbstractCouponHandler {
         double before = context.getCurrentPrice();
 
         context.getOrder().getCoupons().stream()
-                .filter(c -> "NO_THRESHOLD".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.NO_THRESHOLD)
                 .filter(c -> !context.getAppliedCoupons().contains(c))
                 .forEach(c -> {
                     double oldPrice = context.getCurrentPrice();

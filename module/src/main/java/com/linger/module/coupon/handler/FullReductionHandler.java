@@ -1,6 +1,7 @@
 package com.linger.module.coupon.handler;
 
 import com.linger.module.coupon.model.CouponContext;
+import com.linger.module.coupon.model.CouponType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -17,7 +18,7 @@ public class FullReductionHandler extends AbstractCouponHandler {
     @Override
     protected boolean canApply(CouponContext context) {
         return context.getOrder().getCoupons().stream()
-                .filter(c -> "FULL_REDUCTION".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.FULL_REDUCTION)
                 .anyMatch(c -> context.getCurrentPrice() >= c.getThreshold() &&
                         !context.getAppliedCoupons().contains(c));
     }
@@ -27,7 +28,7 @@ public class FullReductionHandler extends AbstractCouponHandler {
         double before = context.getCurrentPrice();
 
         context.getOrder().getCoupons().stream()
-                .filter(c -> "FULL_REDUCTION".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.FULL_REDUCTION)
                 .filter(c -> context.getCurrentPrice() >= c.getThreshold())
                 .filter(c -> !context.getAppliedCoupons().contains(c))
                 .forEach(c -> {

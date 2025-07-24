@@ -1,6 +1,7 @@
 package com.linger.module.coupon.service;
 
 import com.linger.module.coupon.handler.CouponHandler;
+import com.linger.module.coupon.model.Coupon;
 import com.linger.module.coupon.model.CouponContext;
 import com.linger.module.coupon.model.Order;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,12 @@ public class CouponChainService {
     }
 
     public Order process(Order order) {
+        // 只保留每种类型的第一张券
+        List<Coupon> filtered = order.getCoupons().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Coupon::getType, c -> c, (c1, c2) -> c1))
+                .values().stream().collect(java.util.stream.Collectors.toList());
+        order.setCoupons(filtered);
         CouponContext context = new CouponContext();
         context.setOrder(order);
         context.setCurrentPrice(order.getOriginalPrice());

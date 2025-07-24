@@ -2,6 +2,7 @@ package com.linger.module.coupon.handler;
 
 import com.linger.module.coupon.model.Coupon;
 import com.linger.module.coupon.model.CouponContext;
+import com.linger.module.coupon.model.CouponType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -24,7 +25,7 @@ public class DiscountHandler extends AbstractCouponHandler {
     @Override
     protected boolean canApply(CouponContext context) {
         return context.getOrder().getCoupons().stream()
-                .filter(c -> "DISCOUNT".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.DISCOUNT)
                 .anyMatch(c -> !context.getAppliedCoupons().contains(c));
     }
 
@@ -32,7 +33,7 @@ public class DiscountHandler extends AbstractCouponHandler {
     protected void doApply(CouponContext context) {
         double before = context.getCurrentPrice();
         List<Coupon> coupons = context.getOrder().getCoupons().stream()
-                .filter(c -> "DISCOUNT".equals(c.getType()))
+                .filter(c -> c.getType() == CouponType.DISCOUNT)
                 .filter(c -> !context.getAppliedCoupons().contains(c))
                 .collect(Collectors.toList());
 

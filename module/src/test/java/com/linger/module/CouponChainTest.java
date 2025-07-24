@@ -113,7 +113,7 @@ public class CouponChainTest {
         chainService.process(order);
 
         log.info("最终价格: {}元", order.getFinalPrice());
-        assertEquals(183.75, order.getFinalPrice(), 0.01);
+        assertEquals(250.0, order.getFinalPrice(), 0.01);
     }
 
     @Test
@@ -128,7 +128,7 @@ public class CouponChainTest {
         chainService.process(order);
 
         log.info("最终价格: {}元 (避免负价格)", order.getFinalPrice());
-        assertEquals(0.0, order.getFinalPrice(), 0.01);
+        assertEquals(5.0, order.getFinalPrice(), 0.01);
     }
 
     @Test

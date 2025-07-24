@@ -46,6 +46,10 @@ public class DiscountHandler extends AbstractCouponHandler {
 
             double oldPrice = context.getCurrentPrice();
             double newPrice = oldPrice * discountRate;
+            // 保证最低费用为 0.01 元
+            if (newPrice < 0.01) {
+                newPrice = 0.01;
+            }
             context.setCurrentPrice(newPrice);
             context.getAppliedCoupons().add(coupon);
 

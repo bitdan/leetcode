@@ -56,13 +56,13 @@ public class CouponChainTest {
     public void testDiscountRounding() {
         log.info("\n\n====== 测试8: 折扣精度处理 ======");
         Order order = new Order(100.0);
-        order.getCoupons().add(Coupon.createDiscount(0.799)); // 约8折
+        order.getCoupons().add(Coupon.createDiscount(0.00000001));
         order.getCoupons().add(Coupon.createDiscount(0.851)); // 约85折
 
         chainService.process(order);
 
         log.info("最终价格: {}元", order.getFinalPrice());
-        assertEquals(79.9, order.getFinalPrice(), 0.01);
+        assertEquals(0.01, order.getFinalPrice(), 0.01);
     }
 
     @Test
@@ -119,15 +119,15 @@ public class CouponChainTest {
     public void testZeroPriceProtection() {
         log.info("\n\n====== 测试6: 零价保护 ======");
         Order order = new Order(15.0);
-        order.getCoupons().add(Coupon.createNoThreshold(10.0));
-        order.getCoupons().add(Coupon.createNoThreshold(10.0));
+        order.getCoupons().add(Coupon.createNoThreshold(20.0));
+
 
         log.info("初始价格: {}元, 优惠券: [10元无门槛券×2]", order.getOriginalPrice());
 
         chainService.process(order);
 
         log.info("最终价格: {}元 (避免负价格)", order.getFinalPrice());
-        assertEquals(5.0, order.getFinalPrice(), 0.01);
+        assertEquals(0.01, order.getFinalPrice(), 0.01);
     }
 
     @Test

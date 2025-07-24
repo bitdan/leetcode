@@ -33,7 +33,7 @@ public class FullReductionHandler extends AbstractCouponHandler {
                 .filter(c -> !context.getAppliedCoupons().contains(c))
                 .forEach(c -> {
                     double oldPrice = context.getCurrentPrice();
-                    double newPrice = Math.max(0, oldPrice - c.getDiscountAmount());
+                    double newPrice = Math.max(0.01, oldPrice - c.getDiscountAmount());
                     context.setCurrentPrice(newPrice);
                     context.getAppliedCoupons().add(c);
 

@@ -32,7 +32,7 @@ public class NoThresholdHandler extends AbstractCouponHandler {
                 .forEach(c -> {
                     double oldPrice = context.getCurrentPrice();
                     double discountAmount = Math.min(oldPrice, c.getDiscountAmount());
-                    double newPrice = Math.max(0, oldPrice - discountAmount);
+                    double newPrice = Math.max(0.01, oldPrice - discountAmount);
                     context.setCurrentPrice(newPrice);
                     context.getAppliedCoupons().add(c);
 

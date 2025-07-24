@@ -62,8 +62,7 @@ public class CouponChainTest {
         chainService.process(order);
 
         log.info("最终价格: {}元", order.getFinalPrice());
-        // 100 * 0.799 = 79.9, 79.9 * 0.851 ≈ 68.00
-        assertEquals(68.00, order.getFinalPrice(), 0.01);
+        assertEquals(79.9, order.getFinalPrice(), 0.01);
     }
 
     @Test

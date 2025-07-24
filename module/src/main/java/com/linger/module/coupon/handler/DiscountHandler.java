@@ -69,11 +69,6 @@ public class DiscountHandler extends AbstractCouponHandler {
         // 计算实际折扣比例 (1/折扣率)
         double actualDiscount = 10 * discountRate;
 
-        // 避免显示"10.0折"这样的情况
-        if (actualDiscount >= 9.95) {
-            return "无折扣";
-        }
-
         return discountFormat.format(actualDiscount);
     }
 }

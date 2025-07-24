@@ -1,7 +1,7 @@
 package com.linger.module;
 
 import com.linger.OOOOApplication;
-import com.linger.module.service.QuotationService;
+import com.linger.module.transaction.service.QuotationService;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,4 +1,4 @@
-package com.linger.module.service;
+package com.linger.module.transaction.service;
 
 /**
  * @version 1.0

@@ -42,7 +42,7 @@ public class CouponChainTest {
         log.info("\n\n====== 测试2: 无门槛券最后 ======");
         Order order = new Order(50.0);
         order.getCoupons().add(Coupon.createNoThreshold(10.0));
-        order.getCoupons().add(Coupon.createDiscount(0.8));
+        order.getCoupons().add(Coupon.createDiscount(0.8)); // 明确0.8折扣率
 
         log.info("初始价格: {}元, 优惠券: [10元无门槛券, 8折券]", order.getOriginalPrice());
 
@@ -50,6 +50,20 @@ public class CouponChainTest {
 
         log.info("最终价格: {}元", order.getFinalPrice());
         assertEquals(30.0, order.getFinalPrice(), 0.01);
+    }
+
+    @Test
+    public void testDiscountRounding() {
+        log.info("\n\n====== 测试8: 折扣精度处理 ======");
+        Order order = new Order(100.0);
+        order.getCoupons().add(Coupon.createDiscount(0.799)); // 约8折
+        order.getCoupons().add(Coupon.createDiscount(0.851)); // 约85折
+
+        chainService.process(order);
+
+        log.info("最终价格: {}元", order.getFinalPrice());
+        // 100 * 0.799 = 79.9, 79.9 * 0.851 ≈ 68.00
+        assertEquals(68.00, order.getFinalPrice(), 0.01);
     }
 
     @Test

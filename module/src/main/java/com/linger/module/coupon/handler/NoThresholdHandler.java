@@ -1,6 +1,7 @@
 package com.linger.module.coupon.handler;
 
 import com.linger.module.coupon.model.CouponContext;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Order(3)
+@Slf4j
 public class NoThresholdHandler extends AbstractCouponHandler {
     @Override
     protected boolean canApply(CouponContext context) {
@@ -21,12 +23,30 @@ public class NoThresholdHandler extends AbstractCouponHandler {
 
     @Override
     protected void doApply(CouponContext context) {
+        double before = context.getCurrentPrice();
+
         context.getOrder().getCoupons().stream()
                 .filter(c -> "NO_THRESHOLD".equals(c.getType()))
                 .filter(c -> !context.getAppliedCoupons().contains(c))
                 .forEach(c -> {
-                    context.setCurrentPrice(context.getCurrentPrice() - c.getDiscountAmount());
+                    double oldPrice = context.getCurrentPrice();
+                    double discountAmount = Math.min(oldPrice, c.getDiscountAmount());
+                    double newPrice = Math.max(0, oldPrice - discountAmount);
+                    context.setCurrentPrice(newPrice);
                     context.getAppliedCoupons().add(c);
+
+                    // 如果优惠金额被部分应用
+                    if (discountAmount < c.getDiscountAmount()) {
+                        log.info("应用无门槛券(部分): {}元 -> {}元 (优惠:{}, 实际使用:{})",
+                                oldPrice, newPrice, c.getDiscountAmount(), discountAmount);
+                    } else {
+                        log.info("应用无门槛券: {}元 -> {}元 (优惠:{}元)",
+                                oldPrice, newPrice, c.getDiscountAmount());
+                    }
                 });
+
+        double after = context.getCurrentPrice();
+        log.debug("无门槛券处理完成: {}元 -> {}元 (变化: -{}元)",
+                before, after, before - after);
     }
 }

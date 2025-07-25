@@ -424,10 +424,20 @@ public class RedissonConcurrentTest {
                 .filter(count -> count > PER_USER_LIMIT)
                 .collect(Collectors.toList());
 
+        // 添加用户购买分布统计
+        Map<Long, Long> purchaseDistribution = testUserIds.stream()
+                .map(userId -> redissonService.getUserPurchaseCount(userId, TEST_PRODUCT))
+                .collect(Collectors.groupingBy(count -> count, Collectors.counting()));
+
         System.out.println("============= 最终一致性验证 =============");
         System.out.println("Redis全局库存: " + redisGlobal);
         System.out.println("用户购买合计: " + userSum);
         System.out.println("超购用户数: " + overPurchases.size());
+        System.out.println("\n用户购买数量分布:");
+        purchaseDistribution.forEach((count, numUsers) ->
+                System.out.printf("%d件: %d位用户 (%.1f%%)\n",
+                        count, numUsers, numUsers * 100.0 / USER_COUNT)
+        );
         System.out.println("========================================");
 
         // 关键断言

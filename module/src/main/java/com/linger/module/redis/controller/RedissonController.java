@@ -1,4 +1,4 @@
-package com.linger.module.redis;
+package com.linger.module.redis.controller;
 
 import com.linger.module.redis.model.DelayMessageRequest;
 import com.linger.module.redis.service.RedissonService;

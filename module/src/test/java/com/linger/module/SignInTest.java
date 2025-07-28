@@ -1,13 +1,12 @@
 package com.linger.module;
 
 import com.linger.module.redis.service.SignInService;
+import com.linger.module.util.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import javax.annotation.Resource;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 
 /**
  * 签到功能测试类
@@ -23,9 +22,9 @@ public class SignInTest {
     @Test
     public void testSignInFunctionality() {
         Long userId = 1001L;
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String yesterday = LocalDate.now().minusDays(1).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String tomorrow = LocalDate.now().plusDays(1).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String today = DateUtil.getTodayString();
+        String yesterday = DateUtil.getYesterdayString();
+        String tomorrow = DateUtil.getTomorrowString();
 
         log.info("=== 签到功能测试开始 ===");
 
@@ -54,20 +53,20 @@ public class SignInTest {
 
         // 4. 测试月度签到统计
         log.info("\n4. 测试月度签到统计");
-        String currentMonth = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+        String currentMonth = DateUtil.getCurrentYear() + "-" + String.format("%02d", DateUtil.getCurrentMonth());
         String monthlyStats = signInService.getMonthlySignInStats(userId, currentMonth);
         log.info("月度统计: {}", monthlyStats);
 
         // 5. 测试年度签到统计
         log.info("\n5. 测试年度签到统计");
-        int currentYear = LocalDate.now().getYear();
+        int currentYear = DateUtil.getCurrentYear();
         String yearlyStats = signInService.getYearlySignInStats(userId, currentYear);
         log.info("年度统计: {}", yearlyStats);
 
         // 6. 测试批量查询签到状态
         log.info("\n6. 测试批量查询签到状态");
-        String startDate = LocalDate.now().minusDays(7).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String endDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String startDate = DateUtil.getDaysBefore(today, 7);
+        String endDate = today;
         String rangeStats = signInService.getSignInStatusRange(userId, startDate, endDate);
         log.info("最近7天签到记录:\n{}", rangeStats);
 
@@ -81,7 +80,7 @@ public class SignInTest {
         // 模拟多个用户签到
         for (int i = 1; i <= 5; i++) {
             Long userId = 1000L + i;
-            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String today = DateUtil.getTodayString();
 
             String result = signInService.signIn(userId, today);
             log.info("用户{}签到结果: {}", userId, result);
@@ -99,7 +98,7 @@ public class SignInTest {
         log.info("=== 签到性能测试开始 ===");
 
         Long userId = 9999L;
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String today = DateUtil.getTodayString();
 
         long startTime = System.currentTimeMillis();
 

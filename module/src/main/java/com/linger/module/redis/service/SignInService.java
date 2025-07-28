@@ -1,12 +1,12 @@
 package com.linger.module.redis.service;
 
+import com.linger.module.util.DateUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBitSet;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -32,11 +32,16 @@ public class SignInService {
      */
     public String signIn(Long userId, String date) {
         try {
+            // 验证日期格式
+            if (!DateUtil.isValidDate(date)) {
+                return "日期格式错误，请使用" + DateUtil.DATE_PATTERN + "格式";
+            }
+            
             String key = getSignInKey(userId, date);
             RBitSet bitSet = redissonClient.getBitSet(key);
 
             // 计算日期在一年中的第几天（0-364）
-            int dayOfYear = getDayOfYear(date);
+            int dayOfYear = DateUtil.getDayOfYear(date) - 1; // 转换为0-364
 
             // 检查是否已经签到
             if (bitSet.get(dayOfYear)) {
@@ -65,9 +70,13 @@ public class SignInService {
      */
     public boolean isSignedIn(Long userId, String date) {
         try {
+            if (!DateUtil.isValidDate(date)) {
+                return false;
+            }
+            
             String key = getSignInKey(userId, date);
             RBitSet bitSet = redissonClient.getBitSet(key);
-            int dayOfYear = getDayOfYear(date);
+            int dayOfYear = DateUtil.getDayOfYear(date) - 1; // 转换为0-364
             return bitSet.get(dayOfYear);
         } catch (Exception e) {
             log.error("查询签到状态异常，userId: {}, date: {}", userId, date, e);
@@ -84,10 +93,14 @@ public class SignInService {
      */
     public int getConsecutiveSignInDays(Long userId, String date) {
         try {
+            if (!DateUtil.isValidDate(date)) {
+                return 0;
+            }
+            
             String key = getSignInKey(userId, date);
             RBitSet bitSet = redissonClient.getBitSet(key);
 
-            int currentDayOfYear = getDayOfYear(date);
+            int currentDayOfYear = DateUtil.getDayOfYear(date) - 1; // 转换为0-364
             int consecutiveDays = 0;
 
             // 从当前日期往前查找连续签到天数
@@ -101,7 +114,7 @@ public class SignInService {
 
             // 如果当前日期之前没有签到记录，检查上一年
             if (consecutiveDays == 0) {
-                String lastYearKey = getSignInKey(userId, getLastYearDate(date));
+                String lastYearKey = getSignInKey(userId, DateUtil.getDaysBefore(date, 365));
                 RBitSet lastYearBitSet = redissonClient.getBitSet(lastYearKey);
 
                 // 检查上一年最后几天的签到情况
@@ -130,15 +143,11 @@ public class SignInService {
      */
     public String getMonthlySignInStats(Long userId, String yearMonth) {
         try {
-            String[] parts = yearMonth.split("-");
-            int year = Integer.parseInt(parts[0]);
-            int month = Integer.parseInt(parts[1]);
-
-            int totalDays = getDaysInMonth(year, month);
+            int totalDays = DateUtil.getDaysInMonth(yearMonth);
             int signedDays = 0;
 
             for (int day = 1; day <= totalDays; day++) {
-                String date = String.format("%04d-%02d-%02d", year, month, day);
+                String date = String.format("%s-%02d", yearMonth, day);
                 if (isSignedIn(userId, date)) {
                     signedDays++;
                 }
@@ -163,7 +172,8 @@ public class SignInService {
      */
     public String getYearlySignInStats(Long userId, int year) {
         try {
-            int totalDays = isLeapYear(year) ? 366 : 365;
+            String yearStr = String.valueOf(year);
+            int totalDays = DateUtil.isLeapYear(yearStr + "-01-01") ? 366 : 365;
             int signedDays = 0;
 
             String key = getSignInKey(userId, year + "-01-01");
@@ -195,6 +205,11 @@ public class SignInService {
      */
     public String getSignInStatusRange(Long userId, String startDate, String endDate) {
         try {
+            // 验证日期格式
+            if (!DateUtil.isValidDate(startDate) || !DateUtil.isValidDate(endDate)) {
+                return "日期格式错误，请使用" + DateUtil.DATE_PATTERN + "格式";
+            }
+            
             StringBuilder result = new StringBuilder();
             result.append(String.format("用户%d从%s到%s的签到记录：\n", userId, startDate, endDate));
 
@@ -203,7 +218,7 @@ public class SignInService {
             while (!currentDate.equals(endDate)) {
                 boolean signed = isSignedIn(userId, currentDate);
                 result.append(String.format("%s: %s\n", currentDate, signed ? "已签到" : "未签到"));
-                currentDate = getNextDate(currentDate);
+                currentDate = DateUtil.getDaysAfter(currentDate, 1);
             }
 
             // 处理最后一天
@@ -228,59 +243,5 @@ public class SignInService {
         return String.format("signin:user:%d:year:%s", userId, year);
     }
 
-    /**
-     * 计算日期在一年中的第几天（0-364）
-     */
-    private int getDayOfYear(String date) {
-        try {
-            LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
-            return dateTime.getDayOfYear() - 1; // 转换为0-364
-        } catch (Exception e) {
-            log.error("日期解析异常：{}", date, e);
-            return 0;
-        }
-    }
 
-    /**
-     * 获取上一年同一天的日期
-     */
-    private String getLastYearDate(String date) {
-        try {
-            LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
-            LocalDateTime lastYear = dateTime.minusYears(1);
-            return lastYear.toLocalDate().toString();
-        } catch (Exception e) {
-            log.error("计算上一年日期异常：{}", date, e);
-            return date;
-        }
-    }
-
-    /**
-     * 获取指定月份的天数
-     */
-    private int getDaysInMonth(int year, int month) {
-        LocalDateTime dateTime = LocalDateTime.of(year, month, 1, 0, 0);
-        return dateTime.getMonth().length(isLeapYear(year));
-    }
-
-    /**
-     * 判断是否为闰年
-     */
-    private boolean isLeapYear(int year) {
-        return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    }
-
-    /**
-     * 获取下一天的日期
-     */
-    private String getNextDate(String date) {
-        try {
-            LocalDateTime dateTime = LocalDateTime.parse(date + "T00:00:00");
-            LocalDateTime nextDay = dateTime.plusDays(1);
-            return nextDay.toLocalDate().toString();
-        } catch (Exception e) {
-            log.error("计算下一天日期异常：{}", date, e);
-            return date;
-        }
-    }
 } 

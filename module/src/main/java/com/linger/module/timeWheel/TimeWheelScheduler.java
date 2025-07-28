@@ -26,10 +26,10 @@ public class TimeWheelScheduler {
     }
 
     /**
-     * 创建默认的时间轮调度器（1ms精度，512个格子）
+     * 创建默认的时间轮调度器（100ms精度，100个格子）
      */
     public TimeWheelScheduler() {
-        this(1L, 512);
+        this(100L, 100);
     }
 
     /**

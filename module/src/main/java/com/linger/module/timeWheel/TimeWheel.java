@@ -53,13 +53,14 @@ public class TimeWheel {
      */
     public boolean addTask(TimerTask task) {
         long expiration = task.getDelayMs();
+        long currentTimeMs = currentTime.get();
 
-        if (expiration < currentTime.get() + tickMs) {
+        if (expiration < currentTimeMs + tickMs) {
             // 任务已过期，立即执行
             return false;
         }
 
-        if (expiration < currentTime.get() + interval) {
+        if (expiration < currentTimeMs + interval) {
             // 在当前时间轮范围内
             long virtualId = (expiration / tickMs);
             int index = (int) (virtualId % wheelSize);
@@ -67,7 +68,8 @@ public class TimeWheel {
             bucket.addTask(task);
 
             // 如果桶还没有在延迟队列中，则添加
-            if (bucket.setExpiration(virtualId * tickMs)) {
+            // 桶的过期时间应该是任务过期时间，而不是虚拟ID乘以tickMs
+            if (bucket.setExpiration(expiration)) {
                 delayQueue.offer(bucket);
             }
             return true;
@@ -120,9 +122,13 @@ public class TimeWheel {
      */
     private void run() {
         try {
-            TimeWheelBucket bucket = delayQueue.poll();
-            if (bucket != null) {
-                advanceClock(bucket.getExpiration());
+            // 推进当前时间
+            long currentTimeMs = System.currentTimeMillis();
+            advanceClock(currentTimeMs);
+
+            // 处理所有到期的桶
+            TimeWheelBucket bucket;
+            while ((bucket = delayQueue.poll()) != null) {
                 bucket.flush(task -> {
                     // 检查任务是否已过期，如果过期则直接执行，否则重新添加到时间轮
                     if (task.isExpired()) {

@@ -1,6 +1,5 @@
-package com.linger.module;
+package com.linger.module.timeWheel;
 
-import com.linger.module.timeWheel.TimeWheelScheduler;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CompletableFuture;

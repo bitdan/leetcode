@@ -1,6 +1,5 @@
-package com.linger.module;
+package com.linger.module.util;
 
-import com.linger.module.util.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 

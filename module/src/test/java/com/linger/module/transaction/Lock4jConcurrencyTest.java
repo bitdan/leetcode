@@ -1,4 +1,4 @@
-package com.linger.module;
+package com.linger.module.transaction;
 
 import com.linger.OOOOApplication;
 import com.linger.module.transaction.service.QuotationService;

@@ -1,4 +1,4 @@
-package com.linger.module;
+package com.linger.module.redis;
 
 import com.linger.module.redis.service.SignInService;
 import com.linger.module.util.DateUtil;

@@ -1,4 +1,4 @@
-package com.linger.module;
+package com.linger.module.coupon;
 
 import com.linger.module.coupon.model.Coupon;
 import com.linger.module.coupon.model.Order;

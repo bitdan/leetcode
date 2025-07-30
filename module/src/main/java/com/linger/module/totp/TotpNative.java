@@ -76,6 +76,24 @@ public class TotpNative {
         return String.format("%06d", otp);
     }
 
+    // 新增：根据指定时间步生成TOTP码
+    public static String generateTotpAtTime(String secretKey, long timeStep) throws NoSuchAlgorithmException, InvalidKeyException {
+        byte[] keyBytes = base32Decode(secretKey);
+        Mac mac = Mac.getInstance("HmacSHA1");
+        mac.init(new SecretKeySpec(keyBytes, "HmacSHA1"));
+        byte[] hash = mac.doFinal(ByteBuffer.allocate(8).putLong(timeStep).array());
+
+        int offset = hash[hash.length - 1] & 0xF;
+        int binary = ((hash[offset] & 0x7F) << 24) |
+                ((hash[offset + 1] & 0xFF) << 16) |
+                ((hash[offset + 2] & 0xFF) << 8) |
+                (hash[offset + 3] & 0xFF);
+
+        int otp = binary % 1_000_000;
+        return String.format("%06d", otp);
+    }
+
+
     // 生成随机Base32密钥
     public static String generateSecret() {
         byte[] bytes = new byte[20];

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -89,7 +90,7 @@ public class TotpService {
      */
     public boolean verifyTotp(String userId, String totpCode) {
         try {
-            // 检查尝试次数
+            // 检查尝试次数，是否被锁定
             if (isUserLocked(userId)) {
                 throw new RuntimeException("账户已被锁定，请稍后再试");
             }
@@ -102,28 +103,30 @@ public class TotpService {
                 throw new RuntimeException("用户TOTP配置不存在");
             }
 
-
             // 验证备用码
             if (verifyBackupCode(userId, totpCode)) {
                 log.info("用户 {} 使用备用码验证成功", userId);
                 updateLastUsedTime(userId);
-                return true;
-            }
-
-            // 验证TOTP码
-            String expectedCode = TotpNative.generateTotp(totpUser.getSecretKey());
-
-            if (totpCode.equals(expectedCode)) {
-                log.info("用户 {} TOTP验证成功", userId);
-                updateLastUsedTime(userId);
                 resetAttempts(userId);
                 return true;
-            } else {
-                // 增加尝试次数
-                incrementAttempts(userId);
-                log.warn("用户 {} TOTP验证失败，尝试次数: {}", userId, getAttempts(userId));
-                return false;
             }
+
+            // 允许±1时间步窗口验证（时间步长为30秒）
+            long currentTimeStep = Instant.now().getEpochSecond() / 30;
+            for (int i = -1; i <= 1; i++) {
+                String expectedCode = TotpNative.generateTotpAtTime(totpUser.getSecretKey(), currentTimeStep + i);
+                if (totpCode.equals(expectedCode)) {
+                    log.info("用户 {} TOTP验证成功", userId);
+                    updateLastUsedTime(userId);
+                    resetAttempts(userId);
+                    return true;
+                }
+            }
+
+            // 验证失败，增加尝试次数
+            incrementAttempts(userId);
+            log.warn("用户 {} TOTP验证失败，尝试次数: {}", userId, getAttempts(userId));
+            return false;
 
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             log.error("TOTP验证异常", e);

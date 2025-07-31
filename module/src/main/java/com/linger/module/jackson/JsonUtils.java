@@ -20,6 +20,7 @@ import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -47,7 +48,7 @@ public class JsonUtils {
 
     public static final Jackson2ObjectMapperBuilderCustomizer CUSTOMIZER = jackson2ObjectMapperBuilderCustomizer();
 
-    private static ObjectMapper objectMapper = new ObjectMapper();
+    public static final ObjectMapper objectMapper = getObjectMapper();
 
 
     /**
@@ -94,14 +95,14 @@ public class JsonUtils {
 
 
     /**
-     * 初始化 objectMapper 属性
-     * <p>
-     * 通过这样的方式，使用 Spring 创建的 ObjectMapper Bean
+     * 根据 Jackson 自定义配置 构建 ObjectMapper
      *
-     * @param objectMapper ObjectMapper 对象
+     * @return ObjectMapper
      */
-    public static void init(ObjectMapper objectMapper) {
-        JsonUtils.objectMapper = objectMapper;
+    public static ObjectMapper getObjectMapper() {
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+        CUSTOMIZER.customize(builder);
+        return builder.build();
     }
 
     @SneakyThrows

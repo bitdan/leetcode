@@ -1,4 +1,4 @@
-package com.linger.module.jackson;
+package com.linger.module.util;
 
 
 import cn.hutool.core.util.ArrayUtil;
@@ -15,6 +15,7 @@ import com.fasterxml.jackson.datatype.jsr310.deser.LocalTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalTimeSerializer;
+import com.linger.module.jackson.NumberSerializer;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;

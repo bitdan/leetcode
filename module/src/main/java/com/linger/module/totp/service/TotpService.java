@@ -242,7 +242,7 @@ public class TotpService {
     /**
      * 验证备用码
      */
-    private boolean verifyBackupCode(String userId, String code) {
+    public boolean verifyBackupCode(String userId, String code) {
         RMap<String, String> backupCodesMap = redissonClient.getMap(TOTP_BACKUP_CODES_KEY);
         String codeUserId = backupCodesMap.get(code);
 

@@ -1,6 +1,6 @@
-package com.linger.module.redis;
+package com.linger.module.redisson;
 
-import com.linger.module.redis.service.SignInService;
+import com.linger.module.redisson.service.SignInService;
 import com.linger.module.util.DateUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;

@@ -1,7 +1,7 @@
-package com.linger.module.redis.controller;
+package com.linger.module.redisson.controller;
 
-import com.linger.module.redis.model.DelayMessageRequest;
-import com.linger.module.redis.service.RedissonService;
+import com.linger.module.redisson.model.DelayMessageRequest;
+import com.linger.module.redisson.service.RedissonService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

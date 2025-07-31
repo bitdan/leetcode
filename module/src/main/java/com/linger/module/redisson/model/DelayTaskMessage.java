@@ -1,4 +1,4 @@
-package com.linger.module.redis.model;
+package com.linger.module.redisson.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

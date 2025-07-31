@@ -1,4 +1,4 @@
-package com.linger.module.redis;
+package com.linger.module.redisson;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

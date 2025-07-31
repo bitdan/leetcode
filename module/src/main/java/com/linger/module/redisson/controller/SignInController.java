@@ -1,6 +1,6 @@
-package com.linger.module.redis.controller;
+package com.linger.module.redisson.controller;
 
-import com.linger.module.redis.service.SignInService;
+import com.linger.module.redisson.service.SignInService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;

@@ -1,4 +1,4 @@
-package com.linger.module.redis.service;
+package com.linger.module.redisson.service;
 
 import com.linger.module.util.DateUtil;
 import lombok.RequiredArgsConstructor;

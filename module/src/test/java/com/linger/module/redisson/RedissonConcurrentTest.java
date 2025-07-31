@@ -1,7 +1,7 @@
-package com.linger.module.redis;
+package com.linger.module.redisson;
 
 
-import com.linger.module.redis.service.RedissonService;
+import com.linger.module.redisson.service.RedissonService;
 import com.linger.module.util.HttpUtil;
 import okhttp3.Response;
 import org.junit.jupiter.api.BeforeEach;

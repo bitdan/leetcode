@@ -1,7 +1,7 @@
-package com.linger.module.redis.service;
+package com.linger.module.redisson.service;
 
-import com.linger.module.redis.model.DelayMessageRequest;
-import com.linger.module.redis.model.DelayTaskMessage;
+import com.linger.module.redisson.model.DelayMessageRequest;
+import com.linger.module.redisson.model.DelayTaskMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.*;

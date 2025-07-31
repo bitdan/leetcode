@@ -1,4 +1,4 @@
-package com.linger.module.redis;
+package com.linger.module.redisson;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.redisson.Redisson;

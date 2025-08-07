@@ -81,7 +81,14 @@ def main():
     # 检查配置文件
     print("📋 检查配置文件...")
     try:
-        from config import OPENAI_API_KEY, OPENAI_API_BASE
+        import sys
+        from pathlib import Path
+
+        # 添加项目根目录到Python路径
+        project_root = Path(__file__).parent.parent
+        sys.path.append(str(project_root))
+
+        from config.config import OPENAI_API_KEY, OPENAI_API_BASE
         print(f"✅ 配置文件加载成功")
         print(f"   API Base: {OPENAI_API_BASE}")
         print(f"   API Key: {'已配置' if OPENAI_API_KEY else '未配置'}")

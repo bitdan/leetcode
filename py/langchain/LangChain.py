@@ -1,9 +1,16 @@
 import os
+import sys
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
-from config import OPENAI_API_KEY, OPENAI_API_BASE
+from config.config import OPENAI_API_KEY, OPENAI_API_BASE
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
@@ -24,5 +31,5 @@ prompt = PromptTemplate(
 chain = LLMChain(llm=llm, prompt=prompt, verbose=True)
 
 # 运行
-response = chain.run({"topic": "人工智能"})
+response = chain.run({"topic": "langgraph"})
 print("最终输出：", response)

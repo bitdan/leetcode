@@ -1,10 +1,17 @@
 import os
+import sys
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
 
-from config import OPENAI_API_KEY, OPENAI_API_BASE
+from config.config import OPENAI_API_KEY, OPENAI_API_BASE
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 # 配置OpenAI - 使用实际API密钥替换
@@ -122,4 +129,4 @@ def run_workflow(topic: str):
 
 # ===== 5. 运行示例 =====
 if __name__ == "__main__":
-    run_workflow("有什么好吃的融合菜,给出推荐")
+    run_workflow("数据太多怎么办")

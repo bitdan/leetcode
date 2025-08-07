@@ -1,10 +1,17 @@
 import os
+import sys
+from pathlib import Path
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
 
-from config import OPENAI_API_KEY, OPENAI_API_BASE
+from config.config import OPENAI_API_KEY, OPENAI_API_BASE
 from text_to_image import TextToImageGenerator, create_image_prompt
 
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY

@@ -3,11 +3,17 @@ import io
 import json
 import os
 import requests
+import sys
 from PIL import Image
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List
 
-from config import OPENAI_API_KEY, OPENAI_API_BASE
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
+from config.config import OPENAI_API_KEY, OPENAI_API_BASE
 
 
 class TextToImageGenerator:

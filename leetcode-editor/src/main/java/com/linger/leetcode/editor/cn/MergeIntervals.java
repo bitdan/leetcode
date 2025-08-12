@@ -35,16 +35,34 @@ package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+
 @Slf4j
 public class MergeIntervals {
     public static void main(String[] args) {
         Solution solution = new MergeIntervals().new Solution();
+        int[][] merge = solution.merge(new int[][]{{1, 3}, {2, 6}, {8, 10}, {15, 18}});
+        Arrays.stream(merge).forEach(ints -> log.info("{}", ints));
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public int[][] merge(int[][] intervals) {
-            return null;
+            Arrays.sort(intervals, Comparator.comparingInt(a -> a[0]));
+            ArrayList<int[]> merged = new ArrayList<>();
+            merged.add(intervals[0]);
+            for (int i = 1; i < intervals.length; i++) {
+                int[] cur = intervals[i];
+                int[] last = merged.get(merged.size() - 1);
+                if (cur[0] <= last[1]) {
+                    last[1] = Math.max(last[1], cur[1]);
+                } else {
+                    merged.add(cur);
+                }
+            }
+            return merged.toArray(new int[merged.size()][]);
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

@@ -10,13 +10,11 @@ from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
+import config
 
-from config.config import OPENAI_API_KEY, OPENAI_API_BASE
-
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 # 配置OpenAI - 使用实际API密钥替换
 llm = ChatOpenAI(
-    temperature=0.7, model="gpt-4o-mini", openai_api_base=OPENAI_API_BASE
+    temperature=0.7, model="gpt-4o-mini", openai_api_base=config.OPENAI_API_BASE
 )
 
 

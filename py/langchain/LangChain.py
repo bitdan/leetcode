@@ -9,16 +9,13 @@ sys.path.append(str(project_root))
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-
-from config.config import OPENAI_API_KEY, OPENAI_API_BASE
-
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+import config
 
 # 创建 LLM
 llm = ChatOpenAI(
     temperature=0.7,
     model="gpt-3.5-turbo",
-    openai_api_base=OPENAI_API_BASE
+    openai_api_base=config.OPENAI_API_BASE
 )
 
 # 定义提示模板

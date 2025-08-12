@@ -4,4 +4,6 @@ langchain-community
 langgraph
 openai>=1.10.0
 pillow
-requests 
+requests
+PyYAML>=6.0
+python-dotenv 

@@ -1,11 +1,13 @@
-package com.linger.demo;
+package com.linger.module.redisson;
 
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.redisson.Redisson;
 import org.redisson.api.*;
-import org.redisson.client.codec.StringCodec;
-import org.redisson.config.Config;
+import org.redisson.client.protocol.ScoredEntry;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -21,41 +23,50 @@ import java.util.stream.Collectors;
  * @description HotNewsRanking
  * @date 2024/8/19 12:55:06
  */
+
 @Slf4j
-public class HotNewsRanking {
+@SpringBootTest
+@SpringJUnitConfig
+public class HotNewsRankingTest {
+
+    @Autowired
+    private RedissonClient redisson;
+
+    private RScoredSortedSet<String> hotNews;
     private static final String HOT_NEWS_KEY = "hot_news_key";
     public static final Integer TOP_NEWS_COUNT = 10;
-    private final RedissonClient redisson;
-    private final RScoredSortedSet<String> hotNews;
 
+    @BeforeEach
+    public void init() {
+        // 确保redisson已注入
+        if (redisson == null) {
+            throw new IllegalStateException("RedissonClient is not injected");
+        }
 
-    public HotNewsRanking() {
-        Config config = new Config();
-        config.setCodec(new StringCodec());
-        config.useSingleServer()
-            .setDatabase(15)
-            .setPassword("dudu0.0@")
-            .setAddress("redis://139.159.140.112:30379");
-        this.redisson = Redisson.create(config);
-        this.hotNews = redisson.getScoredSortedSet(HOT_NEWS_KEY);
+        // 初始化hotNews对象
+        hotNews = redisson.getScoredSortedSet(HOT_NEWS_KEY);
+
+        // 清除可能存在的旧数据
+        clearRanking();
     }
 
+    // 业务方法
     public void incrementNewsVisit(String newsId) {
         hotNews.addScore(newsId, 1);
     }
 
     public List<Map.Entry<String, Double>> getTopNews() {
         return hotNews.entryRangeReversed(0, TOP_NEWS_COUNT - 1)
-            .stream()
-            .map(entry -> new AbstractMap.SimpleEntry<>(entry.getValue(), entry.getScore()))
-            .collect(Collectors.toList());
+                .stream()
+                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getValue(), entry.getScore()))
+                .collect(Collectors.toList());
     }
 
     public List<String> getTopNewsId() {
         return hotNews.entryRangeReversed(0, TOP_NEWS_COUNT - 1)
-            .stream()
-            .map(entry -> entry.getValue())
-            .collect(Collectors.toList());
+                .stream()
+                .map(ScoredEntry::getValue)
+                .collect(Collectors.toList());
     }
 
     public void removeNews(String newsId) {
@@ -74,84 +85,64 @@ public class HotNewsRanking {
         return hotNews.getScore(newsId);
     }
 
-    public void close() {
-        redisson.shutdown();
-    }
-
+    // 测试方法
     @Test
-    public void test() {
-        HotNewsRanking ranking = new HotNewsRanking();
-        ranking.clearRanking();
+    public void testNewsRanking() {
+        // 使用正确初始化的实例
         for (int i = 0; i < 100; i++) {
-            ranking.incrementNewsVisit("news1");
+            incrementNewsVisit("news1");
         }
 
         for (int i = 0; i < 150; i++) {
-            ranking.incrementNewsVisit("news2");
+            incrementNewsVisit("news2");
         }
 
         for (int i = 0; i < 80; i++) {
-            ranking.incrementNewsVisit("news3");
+            incrementNewsVisit("news3");
         }
 
         for (int i = 0; i < 200; i++) {
-            ranking.incrementNewsVisit("news4");
+            incrementNewsVisit("news4");
         }
 
         for (int i = 0; i < 120; i++) {
-            ranking.incrementNewsVisit("news5");
+            incrementNewsVisit("news5");
         }
 
-        List<Map.Entry<String, Double>> topNews = ranking.getTopNews();
+        List<Map.Entry<String, Double>> topNews = getTopNews();
         log.info("topNews is : {}", topNews);
-        List<String> topNewsId = ranking.getTopNewsId();
+        List<String> topNewsId = getTopNewsId();
         log.info("topNewsId is : {}", topNewsId);
-        ranking.close();
     }
 
     @Test
-    public void test1() throws InterruptedException {
+    public void testDelayQueue() throws InterruptedException {
         addTaskToDelayQueue("234");
-        for (int i = 0; i < 2; i++) {
-            String order = getOrderFromDelayQueue();
-            log.info("order is : {}", order);
-        }
-
+        String order = getOrderFromDelayQueue();
+        log.info("order is : {}", order);
     }
 
-
     public void addTaskToDelayQueue(String orderId) {
-
         RBlockingDeque<String> blockingDeque = redisson.getBlockingDeque("orderQueue");
         RDelayedQueue<String> delayedQueue = redisson.getDelayedQueue(blockingDeque);
         log.info("{}, add task ", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         delayedQueue.offer(orderId, 3, TimeUnit.SECONDS);
-        delayedQueue.offer(orderId, 6, TimeUnit.SECONDS);
-        delayedQueue.offer(orderId, 9, TimeUnit.SECONDS);
     }
 
     public String getOrderFromDelayQueue() throws InterruptedException {
         RBlockingDeque<String> blockingDeque = redisson.getBlockingDeque("orderQueue");
-        RDelayedQueue<String> delayedQueue = redisson.getDelayedQueue(blockingDeque);
-        String orderId = blockingDeque.take();
-        return orderId;
+        return blockingDeque.take();
     }
-
-    public RRateLimiter createLimiter() {
-        RRateLimiter rateLimiter = redisson.getRateLimiter("myRateLimiter3");
-        // 初始化：PER_CLIENT 单实例执行，OVERALL 全实例执行
-        // 最大流速 = 每10秒钟产生3个令牌
-        rateLimiter.trySetRate(RateType.OVERALL, 3, 10, RateIntervalUnit.SECONDS);
-        return rateLimiter;
-    }
-
 
     @Test
-    public void test2() throws InterruptedException {
-        RRateLimiter rateLimiter = createLimiter();
+    public void testRateLimiter() throws InterruptedException {
+        RRateLimiter rateLimiter = redisson.getRateLimiter("myRateLimiter");
+        rateLimiter.trySetRate(RateType.OVERALL, 3, 10, RateIntervalUnit.SECONDS);
+
         int allThreadNum = 20;
         CountDownLatch latch = new CountDownLatch(allThreadNum);
         long startTime = System.currentTimeMillis();
+
         for (int i = 0; i < allThreadNum; i++) {
             int finalI = i;
             new Thread(() -> {
@@ -164,16 +155,15 @@ public class HotNewsRanking {
                 }
                 boolean pass = rateLimiter.tryAcquire();
                 if (pass) {
-                    log.info("get ");
+                    log.info("Thread {} acquired token", finalI);
                 } else {
-                    log.info("no");
+                    log.info("Thread {} failed to acquire token", finalI);
                 }
                 latch.countDown();
             }).start();
         }
+
         latch.await();
-        System.out.println("Elapsed " + (System.currentTimeMillis() - startTime));
-
+        log.info("Elapsed time: {} ms", (System.currentTimeMillis() - startTime));
     }
-
 }

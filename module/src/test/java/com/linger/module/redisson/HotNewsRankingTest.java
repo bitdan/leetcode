@@ -14,9 +14,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * @version 1.0
@@ -135,35 +136,36 @@ public class HotNewsRankingTest {
     }
 
     @Test
-    public void testRateLimiter() throws InterruptedException {
+    public void testRateLimiterWithCompletableFuture() {
         RRateLimiter rateLimiter = redisson.getRateLimiter("myRateLimiter");
         rateLimiter.trySetRate(RateType.OVERALL, 3, 10, RateIntervalUnit.SECONDS);
 
         int allThreadNum = 20;
-        CountDownLatch latch = new CountDownLatch(allThreadNum);
         long startTime = System.currentTimeMillis();
 
-        for (int i = 0; i < allThreadNum; i++) {
-            int finalI = i;
-            new Thread(() -> {
-                if (finalI % 3 == 0) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
+        List<CompletableFuture<Void>> futures = IntStream.range(0, allThreadNum)
+                .mapToObj(i -> CompletableFuture.runAsync(() -> {
+                    // 模拟部分线程延迟启动
+                    if (i % 3 == 0) {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
-                }
-                boolean pass = rateLimiter.tryAcquire();
-                if (pass) {
-                    log.info("Thread {} acquired token", finalI);
-                } else {
-                    log.info("Thread {} failed to acquire token", finalI);
-                }
-                latch.countDown();
-            }).start();
-        }
 
-        latch.await();
+                    boolean pass = rateLimiter.tryAcquire();
+                    if (pass) {
+                        log.info("Thread {} acquired token", i);
+                    } else {
+                        log.info("Thread {} failed to acquire token", i);
+                    }
+                }))
+                .collect(Collectors.toList());
+
+        // 等待所有任务完成
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
         log.info("Elapsed time: {} ms", (System.currentTimeMillis() - startTime));
     }
 }

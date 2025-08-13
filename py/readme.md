@@ -1,1 +1,1 @@
-# 激活conda环境: conda activate ai
+在使用命令行时, 需要 conda activate ai

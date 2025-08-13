@@ -7,3 +7,4 @@ pillow
 requests
 PyYAML>=6.0
 python-dotenv 
+flask

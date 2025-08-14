@@ -1,20 +1,26 @@
-import os
 import sys
-from pathlib import Path
-
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root))
-
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 from pydantic import BaseModel
 from typing import List
 
-# Import the compiled graph from local LangGraph workflow module
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
 from langgraph.LangGraph import graph
+
 
 app = FastAPI(title="LangGraph API", version="1.0.0")
 
+# 允许跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ChatRequest(BaseModel):
     topic: str
@@ -49,5 +55,4 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)

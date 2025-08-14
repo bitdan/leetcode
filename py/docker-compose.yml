@@ -5,12 +5,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        APP_VERSION: ${APP_VERSION:-1.0.0}
-    image: ${IMAGE_NAME:-biasoo/langgraph-api}:${APP_VERSION:-1.0.0}
+    image: biasoo/langgraph-api:1.0.3
     container_name: langgraph-api
     ports:
-      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:80:8000"
     environment:
       - PYTHONPATH=/app
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

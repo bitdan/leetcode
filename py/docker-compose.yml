@@ -5,16 +5,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: biasoo/langgraph-api:1.0.3
+    image: biasoo/langgraph-api:1.0.4
     container_name: langgraph-api
     ports:
-      - "0.0.0.0:80:8000"
+      - "0.0.0.0:8000:8000"
     environment:
       - PYTHONPATH=/app
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_API_BASE=${OPENAI_API_BASE:-}
-    volumes:
-      - ./config:/app/config:ro
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]

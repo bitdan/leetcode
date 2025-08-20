@@ -1,4 +1,6 @@
 import sys
+import os
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -8,10 +10,18 @@ from typing import List
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from langgraph.LangGraph import graph
+from langgraph.LangGraph import run_workflow
 
 
 app = FastAPI(title="LangGraph API", version="1.0.0")
+
+# 基础日志配置（stdout），Docker 会通过 docker logs 捕获
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # 允许跨域访问
 app.add_middleware(
@@ -41,8 +51,8 @@ async def health() -> dict:
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     try:
-        initial_state = {"topic": req.topic, "draft": "", "corrections": [], "attempts": 0}
-        final_state = graph.invoke(initial_state)
+        # 运行工作流（内部包含逐步日志输出）
+        final_state = run_workflow(req.topic)
         return ChatResponse(
             topic=req.topic,
             draft=final_state.get("draft", ""),
@@ -50,6 +60,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             attempts=final_state.get("attempts", 0),
         )
     except Exception as e:
+        logger.exception("/api/v1/chat 调用失败")
         raise HTTPException(status_code=500, detail=str(e))
 
 

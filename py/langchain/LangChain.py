@@ -11,11 +11,12 @@ from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 import config
 
-# 创建 LLM
+# 创建 LLM（从 .env 读取）
 llm = ChatOpenAI(
     temperature=0.7,
     model="gpt-3.5-turbo",
-    openai_api_base=config.OPENAI_API_BASE
+    openai_api_key=config.OPENAI_API_KEY,
+    openai_api_base=config.OPENAI_API_BASE,
 )
 
 # 定义提示模板

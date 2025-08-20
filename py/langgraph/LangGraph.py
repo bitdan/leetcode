@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from pathlib import Path
 
 # 添加项目根目录到Python路径
@@ -12,9 +13,16 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
 import config
 
-# 配置OpenAI - 使用实际API密钥替换
+logger = logging.getLogger(__name__)
+
+# 从环境变量(.env)读取OpenAI配置
 llm = ChatOpenAI(
-    temperature=0.7, model="gpt-4o-mini", openai_api_base=config.OPENAI_API_BASE
+    temperature=0.7,
+    model="gpt-4o-mini",
+    openai_api_key=config.OPENAI_API_KEY,
+    openai_api_base=config.OPENAI_API_BASE,
+    request_timeout=60,
+    max_retries=2,  # 最多重试2次
 )
 
 
@@ -32,21 +40,39 @@ class TextState(TypedDict):
 def generate_draft(state: TextState):
     """根据主题生成初始草稿"""
     prompt = PromptTemplate.from_template(
-        "请为{topic}写一段200字左右的介绍，包含历史背景和现代应用："
+        "请围绕主题'{topic}'撰写一篇简洁的文章。要求：\n"
+        "1. 内容准确、逻辑清晰\n"
+        "2. 长度适中（200-400字）\n"
+        "3. 语言流畅自然\n\n"
+        "主题：{topic}"
     )
     chain = prompt | llm
-    return {"draft": chain.invoke({"topic": state["topic"]}).content}
+    result_text = chain.invoke({"topic": state["topic"]}).content
+    logger.info(f"生成初始草稿:\n{result_text}")
+    return {"draft": result_text}
 
 
 def critique_draft(state: TextState):
-    """对当前草稿进行批判性评估"""
-    prompt = PromptTemplate.from_template(
-        "请批判性分析以下文本并提出改进建议：\n\n{draft}\n\n" "指出至少2项可改进之处。"
-    )
+    """对当前草稿进行批判性评估 - 优化版本，减少不必要的修正"""
+    # 如果已经是第2次或以上尝试，进行更严格的评估
+    current_attempts = state.get("attempts", 0) + 1
+    
+    if current_attempts >= 2:
+        # 后续评估更严格，避免过度修正
+        prompt = PromptTemplate.from_template(
+            "请简要评估以下文本质量：\n\n{draft}\n\n"
+            "如果文本已经达到基本要求（内容准确、逻辑清晰、语言通顺），请回复'满意'。\n"
+            "否则，请指出1-2个最关键的改进点。"
+        )
+    else:
+        prompt = PromptTemplate.from_template(
+            "请评估以下文本并提出改进建议：\n\n{draft}\n\n"
+            "指出1-2项最重要的改进之处，或如果已经满意请说明。"
+        )
+    
     chain = prompt | llm
     feedback = chain.invoke({"draft": state["draft"]})
-    # 增加尝试次数
-    current_attempts = state.get("attempts", 0) + 1
+    logger.info(f"第{current_attempts}轮反馈:\n{feedback.content}")
     return {"corrections": [feedback.content], "attempts": current_attempts}
 
 
@@ -59,6 +85,7 @@ def refine_draft(state: TextState):
     )
     chain = prompt | llm
     new_draft = chain.invoke({"feedback": last_feedback, "draft": state["draft"]})
+    logger.info(f"修正后的草稿:\n{new_draft.content}")
     return {"draft": new_draft.content}
 
 
@@ -83,16 +110,17 @@ def should_continue(state: TextState):
     """检查是否满足停止条件：尝试次数>2 或 最后一次修正提到已达标"""
     last_feedback = state["corrections"][-1].lower()
 
-    # 如果有"满意"或"无需修改"则停止
-    if "满意" in last_feedback or "无需修改" in last_feedback:
+    # 如果有"满意"、"无需修改"、"已经很好"等停止词则停止
+    stop_words = ["满意", "无需修改", "已经很好", "质量良好", "符合要求", "达到标准"]
+    if any(word in last_feedback for word in stop_words):
         return END
 
-    # 最多尝试3次
-    return "refine" if state["attempts"] < 3 else END
+    # 最多尝试2次（减少循环次数以提高响应速度）
+    return "refine" if state["attempts"] < 2 else END
 
 
 workflow.add_conditional_edges(
-    "critique", should_continue, {"refine": "refine", END: END}
+    "critique", should_continue,
 )
 
 # 编译图形
@@ -102,7 +130,7 @@ graph = workflow.compile()
 # ===== 4. 执行工作流 =====
 def run_workflow(topic: str):
     """执行工作流并打印结果"""
-    print(f"\n{'=' * 40}\n 生成主题: {topic}\n{'=' * 40}")
+    logger.info(f"\n{'=' * 40}\n 生成主题: {topic}\n{'=' * 40}")
 
     # 初始化状态
     state = {"topic": topic, "draft": "", "corrections": [], "attempts": 0}
@@ -111,18 +139,20 @@ def run_workflow(topic: str):
     for step, output in enumerate(graph.stream(state)):
         step_name = list(output.keys())[0]
         if step_name == "generate":
-            print(f"\n[初始草稿]:\n{output[step_name]['draft']}")
+            logger.info(f"\n[初始草稿]:\n{output[step_name]['draft']}")
         elif step_name == "critique":
-            print(f"\n[第{step}轮反馈]:\n{output[step_name]['corrections'][-1]}")
+            logger.info(f"\n[第{step}轮反馈]:\n{output[step_name]['corrections'][-1]}")
         elif step_name == "refine":
-            print(f"\n[第{step}轮修改后的草稿]:\n{output[step_name]['draft']}")
+            logger.info(f"\n[第{step}轮修改后的草稿]:\n{output[step_name]['draft']}")
 
     # 最终结果
     final_state = graph.invoke(state)
-    print(
+    logger.info(
         f"\n{'=' * 40}\n最终结果 (经过{len(final_state['corrections'])}次修正):\n{'=' * 40}"
     )
-    print(final_state["draft"])
+    logger.info(final_state["draft"])
+
+    return final_state
 
 
 # ===== 5. 运行示例 =====

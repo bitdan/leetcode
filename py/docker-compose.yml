@@ -5,14 +5,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: biasoo/langgraph-api:1.0.4
+    image: biasoo/langgraph-api:1.0.5
     container_name: langgraph-api
     ports:
       - "0.0.0.0:8000:8000"
     environment:
       - PYTHONPATH=/app
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - OPENAI_API_KEY=sk-FfWxnznnlBbvU8pWEx98aaLYeuJzCYeXqBWirrYuw9D597S8
+      - OPENAI_API_BASE=https://api.chatanywhere.org/v1
+      - MEILI_HTTP_ADDR=http://192.168.9.166:7700/
+      - MEILI_API_KEY=admin
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
@@ -20,4 +22,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-

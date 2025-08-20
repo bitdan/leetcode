@@ -17,7 +17,7 @@ echo [93m构建Docker镜像...[0m
 
 REM 读取版本号参数，默认 1.0.0
 set "APP_VERSION=%1"
-if "%APP_VERSION%"=="" set "APP_VERSION=1.0.0"
+if "%APP_VERSION%"=="" set "APP_VERSION=1.0.5"
 set "IMAGE_NAME=biasoo/langgraph-api:%APP_VERSION%"
 
 echo 将使用版本: %APP_VERSION%

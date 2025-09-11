@@ -34,6 +34,7 @@
 
 package com.linger.leetcode.editor.cn;
 
+import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -48,33 +49,6 @@ public class PalindromeLinkedList {
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
-    /**
-     * Definition for singly-linked list.
-     * public class ListNode {
-     * int val;
-     * ListNode next;
-     * ListNode() {}
-     * ListNode(int val) { this.val = val; }
-     * ListNode(int val, ListNode next) { this.val = val; this.next = next; }
-     * }
-     */
-
-    public static class ListNode {
-        int val;
-        ListNode next;
-
-        ListNode() {
-        }
-
-        ListNode(int val) {
-            this.val = val;
-        }
-
-        ListNode(int val, ListNode next) {
-            this.val = val;
-            this.next = next;
-        }
-    }
 
 
     class Solution {

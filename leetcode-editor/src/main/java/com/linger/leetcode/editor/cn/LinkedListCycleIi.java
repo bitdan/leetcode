@@ -59,6 +59,7 @@
 
 package com.linger.leetcode.editor.cn;
 
+import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -74,34 +75,6 @@ public class LinkedListCycleIi {
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
-    /**
-     * Definition for singly-linked list.
-     * class ListNode {
-     * int val;
-     * ListNode next;
-     * ListNode(int x) {
-     * val = x;
-     * next = null;
-     * }
-     * }
-     */
-
-    public static class ListNode {
-        int val;
-        ListNode next;
-
-        ListNode() {
-        }
-
-        ListNode(int val) {
-            this.val = val;
-        }
-
-        ListNode(int val, ListNode next) {
-            this.val = val;
-            this.next = next;
-        }
-    }
 
     public class Solution {
         public ListNode detectCycle(ListNode head) {

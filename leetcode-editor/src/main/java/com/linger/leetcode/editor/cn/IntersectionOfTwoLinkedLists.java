@@ -91,6 +91,7 @@
 
 package com.linger.leetcode.editor.cn;
 
+import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -100,19 +101,19 @@ public class IntersectionOfTwoLinkedLists {
         Solution solution = outer.new Solution();
 
         // 构造公共部分：8 -> 4 -> 5
-        ListNode common = outer.new ListNode(8);
-        common.next = outer.new ListNode(4);
-        common.next.next = outer.new ListNode(5);
+        ListNode common = new ListNode(8);
+        common.next = new ListNode(4);
+        common.next.next = new ListNode(5);
 
         // 构造链表 A：4 -> 1 -> [8 -> 4 -> 5]
-        ListNode headA = outer.new ListNode(4);
-        headA.next = outer.new ListNode(1);
+        ListNode headA = new ListNode(4);
+        headA.next = new ListNode(1);
         headA.next.next = common;
 
         // 构造链表 B：5 -> 6 -> 1 -> [8 -> 4 -> 5]
-        ListNode headB = outer.new ListNode(5);
-        headB.next = outer.new ListNode(6);
-        headB.next.next = outer.new ListNode(1);
+        ListNode headB = new ListNode(5);
+        headB.next = new ListNode(6);
+        headB.next.next = new ListNode(1);
         headB.next.next.next = common;
 
         // 调用方法
@@ -123,17 +124,7 @@ public class IntersectionOfTwoLinkedLists {
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
-    /**
-     * Definition for singly-linked list.
-     * public class ListNode {
-     * int val;
-     * ListNode next;
-     * ListNode(int x) {
-     * val = x;
-     * next = null;
-     * }
-     * }
-     */
+
     public class Solution {
         public ListNode getIntersectionNode(ListNode headA, ListNode headB) {
             if (headA == null || headB == null) {
@@ -149,15 +140,7 @@ public class IntersectionOfTwoLinkedLists {
         }
     }
 
-    public class ListNode {
-        int val;
-        ListNode next;
 
-        ListNode(int x) {
-            val = x;
-            next = null;
-        }
-    }
 //leetcode submit region end(Prohibit modification and deletion)
 
 }

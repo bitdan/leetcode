@@ -45,13 +45,14 @@
 
 package com.linger.leetcode.editor.cn;
 
+import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class ReverseLinkedList {
     public static void main(String[] args) {
         Solution solution = new ReverseLinkedList().new Solution();
-        ReverseLinkedList.ListNode common = new ListNode(1);
+        ListNode common = new ListNode(1);
         common.next = new ListNode(2);
         common.next.next = new ListNode(3);
         common.next.next.next = new ListNode(4);
@@ -62,16 +63,7 @@ public class ReverseLinkedList {
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
-    /**
-     * Definition for singly-linked list.
-     * public class ListNode {
-     * int val;
-     * ListNode next;
-     * ListNode() {}
-     * ListNode(int val) { this.val = val; }
-     * ListNode(int val, ListNode next) { this.val = val; this.next = next; }
-     * }
-     */
+
     class Solution {
         public ListNode reverseList(ListNode head) {
             ListNode pre = null;
@@ -86,15 +78,6 @@ public class ReverseLinkedList {
         }
     }
 
-    public static class ListNode {
-        int val;
-        ReverseLinkedList.ListNode next;
-
-        ListNode(int x) {
-            val = x;
-            next = null;
-        }
-    }
 
     public static void print(ListNode node) {
         while (node != null) {

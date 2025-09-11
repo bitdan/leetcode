@@ -48,6 +48,7 @@ package com.linger.leetcode.editor.cn;
 import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
+
 @Slf4j
 public class ReverseLinkedList {
     public static void main(String[] args) {
@@ -57,9 +58,9 @@ public class ReverseLinkedList {
         common.next.next = new ListNode(3);
         common.next.next.next = new ListNode(4);
         common.next.next.next.next = new ListNode(5);
-        print(common);
+        log.info("原链表: {}", common);
         ListNode listNode = solution.reverseList(common);
-        print(listNode);
+        log.info("反转后的链表: {}", listNode);
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
@@ -79,13 +80,6 @@ public class ReverseLinkedList {
     }
 
 
-    public static void print(ListNode node) {
-        while (node != null) {
-            log.info(node.val + "->");
-            node = node.next;
-        }
-        log.info("\n");
-    }
 //leetcode submit region end(Prohibit modification and deletion)
 
 }

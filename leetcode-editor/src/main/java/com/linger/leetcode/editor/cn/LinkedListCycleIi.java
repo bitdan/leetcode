@@ -65,11 +65,8 @@ import lombok.extern.slf4j.Slf4j;
 public class LinkedListCycleIi {
     public static void main(String[] args) {
         Solution solution = new LinkedListCycleIi().new Solution();
-        ListNode node = new ListNode(3);
-        node.next = new ListNode(2);
-        node.next.next = new ListNode(0);
-        node.next.next.next = new ListNode(4);
-        node.next.next.next.next = node;
+        ListNode node = ListNode.of(3, 2, 0, -4).withCycle(1);
+        log.info("node: {}", node);
         log.info("{}", solution.detectCycle(node));
     }
     //leetcode submit region begin(Prohibit modification and deletion)

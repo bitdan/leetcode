@@ -62,11 +62,7 @@ import lombok.extern.slf4j.Slf4j;
 public class LinkedListCycle {
     public static void main(String[] args) {
         Solution solution = new LinkedListCycle().new Solution();
-        ListNode node = new ListNode(3);
-        node.next = new ListNode(2);
-        node.next.next = new ListNode(0);
-        node.next.next.next = new ListNode(4);
-        node.next.next.next.next = node.next;
+        ListNode node = ListNode.of(3, 2, 0, -4).withCycle(1);
         log.info("{}", solution.hasCycle(node));
 
     }

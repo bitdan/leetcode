@@ -5,6 +5,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+
 /**
  * @version 1.0
  * @description ListNode
@@ -27,7 +31,13 @@ public class ListNode {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         ListNode node = this;
+        Set<ListNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         while (node != null) {
+            if (visited.contains(node)) {
+                sb.append(node.val).append("->(cycle to ").append(node.val).append(")");
+                break;
+            }
+            visited.add(node);
             sb.append(node.val);
             if (node.next != null) sb.append("->");
             node = node.next;
@@ -35,6 +45,13 @@ public class ListNode {
         return sb.toString();
     }
 
+
+    /**
+     * 创建链表
+     *
+     * @param values
+     * @return
+     */
     public static ListNode of(int... values) {
         if (values == null || values.length == 0) {
             return null;
@@ -73,6 +90,35 @@ public class ListNode {
         }
         curr.next = this;
         return other;
+    }
+
+
+    /**
+     * 根据下标 pos 构造环
+     * pos = -1 表示无环
+     * pos >= 0 表示尾结点连回第 pos 个节点（0-based）
+     */
+    public ListNode withCycle(int pos) {
+        if (pos < 0) return this;
+
+        ListNode tail = this;
+        ListNode cycleEntry = null;
+        int index = 0;
+        ListNode curr = this;
+        while (curr != null) {
+            if (index == pos) {
+                cycleEntry = curr;
+            }
+            if (curr.next == null) {
+                tail = curr;
+            }
+            curr = curr.next;
+            index++;
+        }
+        if (cycleEntry != null) {
+            tail.next = cycleEntry;
+        }
+        return this;
     }
 
 

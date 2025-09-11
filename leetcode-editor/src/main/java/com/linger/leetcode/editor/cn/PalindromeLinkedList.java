@@ -34,7 +34,6 @@
 
 package com.linger.leetcode.editor.cn;
 
-import com.linger.leetcode.editor.cn.doc.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

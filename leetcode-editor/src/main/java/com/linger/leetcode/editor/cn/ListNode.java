@@ -1,4 +1,4 @@
-package com.linger.leetcode.editor.cn.doc;
+package com.linger.leetcode.editor.cn;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

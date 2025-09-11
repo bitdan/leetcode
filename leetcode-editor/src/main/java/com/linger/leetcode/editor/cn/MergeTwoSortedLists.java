@@ -44,12 +44,8 @@ import lombok.extern.slf4j.Slf4j;
 public class MergeTwoSortedLists {
     public static void main(String[] args) {
         Solution solution = new MergeTwoSortedLists().new Solution();
-        ListNode l1 = new ListNode(1);
-        l1.next = new ListNode(2);
-        l1.next.next = new ListNode(4);
-        ListNode l2 = new ListNode(1);
-        l2.next = new ListNode(3);
-        l2.next.next = new ListNode(4);
+        ListNode l1 = ListNode.of(1, 2, 4);
+        ListNode l2 = ListNode.of(1, 3, 4);
         log.info("{}", solution.mergeTwoLists(l1, l2));
     }
     //leetcode submit region begin(Prohibit modification and deletion)

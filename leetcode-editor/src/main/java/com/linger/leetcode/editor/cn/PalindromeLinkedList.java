@@ -40,10 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 public class PalindromeLinkedList {
     public static void main(String[] args) {
         Solution solution = new PalindromeLinkedList().new Solution();
-        ListNode node = new ListNode(1);
-        node.next = new ListNode(2);
-        node.next.next = new ListNode(2);
-        node.next.next.next = new ListNode(1);
+        ListNode node = ListNode.of(1, 2, 2, 1);
         log.info("{}", solution.isPalindrome(node));
     }
     //leetcode submit region begin(Prohibit modification and deletion)

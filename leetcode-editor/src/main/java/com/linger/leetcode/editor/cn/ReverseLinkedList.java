@@ -52,11 +52,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ReverseLinkedList {
     public static void main(String[] args) {
         Solution solution = new ReverseLinkedList().new Solution();
-        ListNode common = new ListNode(1);
-        common.next = new ListNode(2);
-        common.next.next = new ListNode(3);
-        common.next.next.next = new ListNode(4);
-        common.next.next.next.next = new ListNode(5);
+        ListNode common = ListNode.of(1, 2, 3, 4, 5);
         log.info("原链表: {}", common);
         ListNode listNode = solution.reverseList(common);
         log.info("反转后的链表: {}", listNode);

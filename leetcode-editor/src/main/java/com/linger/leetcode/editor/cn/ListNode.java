@@ -1,7 +1,6 @@
 package com.linger.leetcode.editor.cn;
 
 import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -14,17 +13,18 @@ import java.util.Set;
  * @description ListNode
  * @date 2025/9/11 09:44:46
  */
-@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Slf4j
 public class ListNode {
     public int val;
     public ListNode next;
+    public ListNode random;
 
     public ListNode(int x) {
         val = x;
         next = null;
+        random = null;
     }
 
     @Override
@@ -63,6 +63,31 @@ public class ListNode {
             curr = curr.next;
         }
         return head;
+    }
+
+    public static ListNode ofWithRandom(Integer[][] nodes) {
+        if (nodes == null || nodes.length == 0) {
+            return null;
+        }
+
+        // 1. 先创建所有节点（只设置 val 和 next）
+        ListNode[] list = new ListNode[nodes.length];
+        for (int i = 0; i < nodes.length; i++) {
+            list[i] = new ListNode(nodes[i][0]);
+        }
+        for (int i = 0; i < nodes.length - 1; i++) {
+            list[i].next = list[i + 1];
+        }
+
+        // 2. 再设置 random
+        for (int i = 0; i < nodes.length; i++) {
+            Integer randomIndex = nodes[i][1];
+            if (randomIndex != null) {
+                list[i].random = list[randomIndex];
+            }
+        }
+
+        return list[0];
     }
 
 

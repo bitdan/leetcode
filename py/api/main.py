@@ -11,9 +11,10 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from langgraph.LangGraph import run_workflow
+from auth.routes import router as auth_router
 
 
-app = FastAPI(title="LangGraph API", version="1.0.0")
+app = FastAPI(title="Tool Hub API", version="1.0.0")
 
 # 基础日志配置（stdout），Docker 会通过 docker logs 捕获
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -31,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册认证路由
+app.include_router(auth_router)
 
 class ChatRequest(BaseModel):
     topic: str

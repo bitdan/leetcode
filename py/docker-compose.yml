@@ -5,12 +5,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: biasoo/langgraph-api:1.0.5
+    image: biasoo/langgraph-api:1.0.6
     container_name: langgraph-api
     ports:
       - "0.0.0.0:8000:8000"
     environment:
       - PYTHONPATH=/app
+      - TZ=Asia/Shanghai
       - OPENAI_API_KEY=sk-FfWxnznnlBbvU8pWEx98aaLYeuJzCYeXqBWirrYuw9D597S8
       - OPENAI_API_BASE=https://api.chatanywhere.org/v1
       - MEILI_HTTP_ADDR=http://192.168.9.166:7700/

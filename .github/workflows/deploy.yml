@@ -1,0 +1,77 @@
+name: Deploy API
+
+on:
+  push:
+    paths:
+      - "py/**"            # 只监控 py 目录的变动
+  workflow_dispatch:       # 支持手动触发
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: REPO
+
+    steps:
+      # 1. 拉取代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 设置 Docker
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. 登录 Docker（可选，如果推镜像到 Docker Hub 或私服）
+      - name: Docker Login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 4. 构建 Docker 镜像（在 py/ 目录）
+      - name: Build Docker image
+        working-directory: py
+        run: |
+          TIMESTAMP=$(TZ="Asia/Shanghai" date +%Y%m%d-%H%M%S)
+          IMAGE_TAG="biasoo/langgraph-api:$TIMESTAMP"
+          LATEST_TAG="biasoo/langgraph-api:latest"
+          echo "Building image $IMAGE_TAG"
+          docker build -t $IMAGE_TAG -t $LATEST_TAG .
+          
+          # 保存 timestamp 到文件，使用上海时区
+          echo $TIMESTAMP > build_timestamp.txt
+
+      # 5. 推送镜像到 Docker Hub
+      - name: Push Docker image
+        working-directory: py
+        run: |
+          TIMESTAMP=$(cat build_timestamp.txt)
+          docker push biasoo/langgraph-api:$TIMESTAMP
+          docker push biasoo/langgraph-api:latest
+          echo "镜像已推送到 Docker Hub: https://hub.docker.com/repository/docker/biasoo/langgraph-api"
+
+      # 6. 上传构建时间戳文件到服务器
+      - name: Upload timestamp file
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          source: "py/build_timestamp.txt"
+          target: "/docker/langgraph-api/"
+
+      # 7. 部署到服务器
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          script: |
+            cd /docker/langgraph-api/
+            TIMESTAMP=$(cat /docker/langgraph-api/py/build_timestamp.txt)  
+            sed -i "s|\(image: biasoo/langgraph-api:\).*|\1$TIMESTAMP|" docker-compose.yml
+            docker compose up -d 
+            echo "✅ 部署完成"
+            echo "查看日志: docker compose logs -f"

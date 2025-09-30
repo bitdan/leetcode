@@ -22,3 +22,13 @@ REDIS_CONFIG = {
     "decode_responses": True
 }
 
+# 微信登录配置
+WECHAT_APP_ID = os.getenv("WECHAT_APP_ID", "your_wechat_app_id")
+WECHAT_APP_SECRET = os.getenv("WECHAT_APP_SECRET", "your_wechat_app_secret")
+WECHAT_REDIRECT_URI = os.getenv("WECHAT_REDIRECT_URI", "http://localhost:8000/api/v1/wechat/callback")
+FRONTEND_DOMAIN = os.getenv("FRONTEND_DOMAIN", "http://localhost:3000")
+
+# 二维码配置
+QR_EXPIRE_TIME = int(os.getenv("QR_EXPIRE_TIME", "300"))  # 5分钟
+QR_SIZE = int(os.getenv("QR_SIZE", "300"))  # 二维码大小
+

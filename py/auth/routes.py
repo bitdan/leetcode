@@ -3,10 +3,14 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from auth.models import (
     UserCreate, UserLogin, Token, UserInfo, 
-    CaptchaResponse, ApiResponse
+    CaptchaResponse, ApiResponse, WechatLoginRequest,
+    WechatBindRequest, QRCodeLoginRequest, WechatLoginResponse,
+    QRCodeLoginResponse, QRCodeStatusResponse
 )
 from auth.user_service import user_service
 from auth.jwt_handler import jwt_handler
+from auth.wechat_service import wechat_service
+from auth.wechat_config import wechat_config
 
 logger = logging.getLogger(__name__)
 
@@ -216,4 +220,138 @@ async def get_captcha():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取验证码失败"
+        )
+
+
+# 微信登录相关路由
+@router.get("/wechat/login-url", response_model=ApiResponse)
+async def get_wechat_login_url():
+    """获取微信登录授权URL"""
+    try:
+        login_url = wechat_service.get_wechat_login_url()
+        return ApiResponse(
+            code=200,
+            msg="获取微信登录URL成功",
+            data={"login_url": login_url}
+        )
+    except Exception as e:
+        logger.error(f"获取微信登录URL失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取微信登录URL失败"
+        )
+
+
+@router.post("/wechat/login", response_model=WechatLoginResponse)
+async def wechat_login(request: WechatLoginRequest):
+    """微信登录"""
+    try:
+        result = wechat_service.wechat_login(request.code)
+        return result
+    except Exception as e:
+        logger.error(f"微信登录API调用失败: {e}")
+        return WechatLoginResponse(
+            success=False,
+            message=f"微信登录失败: {str(e)}"
+        )
+
+
+@router.post("/wechat/bind", response_model=WechatLoginResponse)
+async def bind_wechat_user(request: WechatBindRequest):
+    """绑定微信用户"""
+    try:
+        result = wechat_service.bind_wechat_user(
+            request.openid, 
+            request.username, 
+            request.password
+        )
+        return result
+    except Exception as e:
+        logger.error(f"绑定微信用户API调用失败: {e}")
+        return WechatLoginResponse(
+            success=False,
+            message=f"绑定失败: {str(e)}"
+        )
+
+
+@router.post("/wechat/qr/create", response_model=QRCodeLoginResponse)
+async def create_qr_code_login(request: QRCodeLoginRequest):
+    """创建二维码登录"""
+    try:
+        result = wechat_service.create_qr_code_login(request.scene_str)
+        if result:
+            return result
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="创建二维码登录失败"
+            )
+    except Exception as e:
+        logger.error(f"创建二维码登录API调用失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建二维码登录失败"
+        )
+
+
+@router.get("/wechat/qr/status/{scene_str}", response_model=QRCodeStatusResponse)
+async def check_qr_code_status(scene_str: str):
+    """检查二维码登录状态"""
+    try:
+        result = wechat_service.check_qr_code_status(scene_str)
+        return result
+    except Exception as e:
+        logger.error(f"检查二维码状态API调用失败: {e}")
+        return QRCodeStatusResponse(
+            status="error",
+            message=f"检查状态失败: {str(e)}"
+        )
+
+
+@router.post("/wechat/qr/login", response_model=WechatLoginResponse)
+async def qr_code_login(scene_str: str, wechat_info: dict):
+    """二维码登录确认"""
+    try:
+        from auth.models import WechatUserInfo
+        wechat_user_info = WechatUserInfo(**wechat_info)
+        result = wechat_service.qr_code_login(scene_str, wechat_user_info)
+        return result
+    except Exception as e:
+        logger.error(f"二维码登录API调用失败: {e}")
+        return WechatLoginResponse(
+            success=False,
+            message=f"二维码登录失败: {str(e)}"
+        )
+
+
+@router.get("/wechat/callback")
+async def wechat_callback(code: str = None, state: str = None):
+    """微信授权回调"""
+    try:
+        if not code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="缺少授权码"
+            )
+        
+        # 执行微信登录
+        result = wechat_service.wechat_login(code)
+        
+        if result.success:
+            # 登录成功，重定向到前端页面并传递token
+            redirect_url = wechat_config.get_success_redirect_url(result.token)
+        elif result.need_bind:
+            # 需要绑定，重定向到绑定页面
+            redirect_url = wechat_config.get_bind_redirect_url(result.wechat_info.openid)
+        else:
+            # 登录失败
+            redirect_url = wechat_config.get_failed_redirect_url(result.message)
+        
+        return {"redirect_url": redirect_url}
+        
+    except Exception as e:
+        logger.error(f"微信回调处理失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="微信回调处理失败"
         )

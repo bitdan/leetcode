@@ -22,6 +22,8 @@ class UserService:
                 "avatar": None,
                 "roles": ["admin"],
                 "permissions": ["*"],
+                "wechat_openid": None,  # 微信openid
+                "login_type": "password",  # 登录类型：password, wechat, qr
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             }
@@ -63,6 +65,8 @@ class UserService:
                 "avatar": None,
                 "roles": ["user"],
                 "permissions": [],
+                "wechat_openid": None,
+                "login_type": "password",
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             }
@@ -247,6 +251,97 @@ class UserService:
         except Exception as e:
             logger.error(f"验证用户会话失败: {e}")
             return None
+
+    def bind_wechat_to_user(self, user_id: str, wechat_openid: str) -> bool:
+        """绑定微信到用户"""
+        try:
+            for user_dict in self.users_db.values():
+                if user_dict["user_id"] == user_id:
+                    user_dict["wechat_openid"] = wechat_openid
+                    user_dict["updated_at"] = datetime.now().isoformat()
+                    logger.info(f"用户 {user_id} 绑定微信成功")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"绑定微信失败: {e}")
+            return False
+
+    def get_user_by_wechat_openid(self, wechat_openid: str) -> Optional[User]:
+        """根据微信openid获取用户"""
+        try:
+            for user_dict in self.users_db.values():
+                if user_dict.get("wechat_openid") == wechat_openid:
+                    return User(
+                        user_id=user_dict["user_id"],
+                        username=user_dict["username"],
+                        email=user_dict["email"],
+                        avatar=user_dict["avatar"],
+                        created_at=datetime.fromisoformat(user_dict["created_at"]),
+                        updated_at=datetime.fromisoformat(user_dict["updated_at"])
+                    )
+            return None
+        except Exception as e:
+            logger.error(f"根据微信openid获取用户失败: {e}")
+            return None
+
+    def create_wechat_user(self, wechat_openid: str, wechat_nickname: str = None) -> Optional[User]:
+        """创建微信用户"""
+        try:
+            # 检查是否已存在
+            existing_user = self.get_user_by_wechat_openid(wechat_openid)
+            if existing_user:
+                return existing_user
+
+            # 创建新用户
+            user_id = f"wx_user_{uuid.uuid4().hex[:8]}"
+            username = wechat_nickname or f"微信用户_{wechat_openid[-8:]}"
+            
+            user_dict = {
+                "user_id": user_id,
+                "username": username,
+                "password_hash": None,  # 微信用户不需要密码
+                "email": None,
+                "avatar": None,
+                "roles": ["user"],
+                "permissions": [],
+                "wechat_openid": wechat_openid,
+                "login_type": "wechat",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # 使用openid作为key存储
+            self.users_db[f"wx_{wechat_openid}"] = user_dict
+            
+            # 构建User对象
+            user = User(
+                user_id=user_id,
+                username=username,
+                email=None,
+                avatar=None,
+                created_at=datetime.fromisoformat(user_dict["created_at"]),
+                updated_at=datetime.fromisoformat(user_dict["updated_at"])
+            )
+            
+            logger.info(f"微信用户创建成功: {username}")
+            return user
+            
+        except Exception as e:
+            logger.error(f"创建微信用户失败: {e}")
+            return None
+
+    def update_user_login_type(self, user_id: str, login_type: str) -> bool:
+        """更新用户登录类型"""
+        try:
+            for user_dict in self.users_db.values():
+                if user_dict["user_id"] == user_id:
+                    user_dict["login_type"] = login_type
+                    user_dict["updated_at"] = datetime.now().isoformat()
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"更新用户登录类型失败: {e}")
+            return False
 
 
 # 全局用户服务实例

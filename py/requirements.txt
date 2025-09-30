@@ -15,3 +15,6 @@ PyJWT>=2.8.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2 
 python-multipart>=0.0.6
+# 微信登录相关依赖
+wechatpy>=1.8.18
+qrcode[pil]>=7.4.2

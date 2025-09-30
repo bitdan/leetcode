@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到Python路径
-project_root = Path(__file__).parent
+project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
 
 def test_redis_connection():
@@ -54,3 +54,5 @@ if __name__ == "__main__":
     else:
         print("💥 Redis连接测试失败！")
         sys.exit(1)
+
+

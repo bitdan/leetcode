@@ -47,7 +47,7 @@ async def create_room(
         return ApiResponse(
             code=200,
             msg="房间创建成功",
-            data={"room_id": room_id}
+            data=room_id
         )
         
     except HTTPException:

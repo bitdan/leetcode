@@ -81,8 +81,3 @@ class GameEvent(BaseModel):
     timestamp: float
 
 
-class ApiResponse(BaseModel):
-    """API响应"""
-    code: int
-    msg: str
-    data: Optional[dict] = None

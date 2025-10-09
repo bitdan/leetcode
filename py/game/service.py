@@ -107,15 +107,16 @@ class GameService:
         
         # 移除玩家
         if room.host.user_id == user_id:
-            # 房主离开，删除房间
+            # 房主离开，删除房间（_delete_room已经清理了player_rooms映射）
             self._delete_room(room_id)
         else:
             # 客人离开
             room.guest = None
             room.game_state.status = GameStatus.WAITING
             room.game_state.updated_at = time.time()
+            # 只删除当前用户的映射
+            del self.player_rooms[user_id]
         
-        del self.player_rooms[user_id]
         return True
     
     def make_move(self, room_id: str, user_id: str, x: int, y: int) -> bool:

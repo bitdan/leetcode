@@ -28,7 +28,13 @@ logger = logging.getLogger(__name__)
 # 允许跨域访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173", 
+        "http://localhost:8080",
+        "http://tool.linger.host",
+        "https://tool.linger.host"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

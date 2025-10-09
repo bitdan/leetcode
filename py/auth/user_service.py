@@ -45,7 +45,7 @@ class UserService:
                 raise ValueError("用户名已存在")
 
             # 验证密码
-            if user_data.password != user_data.confirm_password:
+            if user_data.password != user_data.confirmPassword:
                 raise ValueError("两次输入的密码不一致")
 
             if len(user_data.password) < 6:

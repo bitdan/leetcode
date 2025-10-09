@@ -10,10 +10,10 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    confirm_password: str
+    confirmPassword: str
     code: str
     uuid: str
-    user_type: str = "sys_user"
+    userType: str = "sys_user"
 
 
 class UserLogin(BaseModel):

@@ -12,6 +12,7 @@ sys.path.append(str(project_root))
 
 from langgraph.LangGraph import run_workflow
 from auth.routes import router as auth_router
+from game.routes import router as game_router
 
 
 app = FastAPI(title="Tool Hub API", version="1.0.0")
@@ -35,6 +36,9 @@ app.add_middleware(
 
 # 注册认证路由
 app.include_router(auth_router)
+
+# 注册游戏路由
+app.include_router(game_router)
 
 class ChatRequest(BaseModel):
     topic: str

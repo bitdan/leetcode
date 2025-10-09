@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 
@@ -58,4 +58,4 @@ class CaptchaResponse(BaseModel):
 class ApiResponse(BaseModel):
     code: int = 200
     msg: str = "success"
-    data: Optional[dict] = None
+    data: Optional[Any] = None

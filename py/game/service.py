@@ -83,8 +83,33 @@ class GameService:
             },
             timestamp=time.time()
         )))
-        
+        # ✅ 自动开始游戏（新加逻辑）
+        asyncio.create_task(self._auto_start_game(room_id))
+
         return True
+
+    async def _auto_start_game(self, room_id: str):
+        """当房间凑齐两人后自动开始游戏"""
+        await asyncio.sleep(0.5)  # 给前端一点缓冲时间
+        room = self.rooms.get(room_id)
+        if not room or not room.host or not room.guest:
+            return
+
+        if room.game_state.status == GameStatus.READY:
+            room.game_state.status = GameStatus.PLAYING
+            room.game_state.updated_at = time.time()
+            logger.info(f"房间 {room_id} 游戏自动开始")
+
+            await self._broadcast_event(room_id, GameEvent(
+                type="game_started",
+                room_id=room_id,
+                data={
+                    "current_player": room.game_state.current_player.value,
+                    "host_color": room.host.color.value if room.host.color else None,
+                    "guest_color": room.guest.color.value if room.guest.color else None
+                },
+                timestamp=time.time()
+            ))
     
     def leave_room(self, user_id: str) -> bool:
         """离开房间"""

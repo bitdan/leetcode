@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 /**
@@ -77,6 +79,34 @@ public class TreeNode {
             i++;
         }
         return root;
+    }
+
+    @Override
+    public String toString() {
+        List<String> result = new ArrayList<>();
+        Queue<TreeNode> queue = new LinkedList<>();
+        queue.offer(this);
+
+        while (!queue.isEmpty()) {
+            TreeNode node = queue.poll();
+            if (node == null) {
+                result.add("null");
+                continue;
+            }
+            result.add(String.valueOf(node.val));
+            // 只有在节点不为空时才加入左右子节点
+            if (node.left != null || node.right != null) {
+                queue.offer(node.left);
+                queue.offer(node.right);
+            }
+        }
+
+        // 去除末尾多余的 null
+        int end = result.size() - 1;
+        while (end >= 0 && "null".equals(result.get(end))) {
+            end--;
+        }
+        return result.subList(0, end + 1).toString();
     }
 
 }

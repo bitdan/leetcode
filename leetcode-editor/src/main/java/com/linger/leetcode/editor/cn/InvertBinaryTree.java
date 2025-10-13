@@ -43,6 +43,8 @@ package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.LinkedList;
+
 @Slf4j
 public class InvertBinaryTree {
     public static void main(String[] args) {
@@ -52,11 +54,32 @@ public class InvertBinaryTree {
     //leetcode submit region begin(Prohibit modification and deletion)
 
     class Solution {
-        public TreeNode invertTree(TreeNode root) {
+        /*
+       public TreeNode invertTree(TreeNode root) {
             if (root == null) return null;
             TreeNode left = invertTree(root.left);
             TreeNode right = invertTree(root.right);
             return new TreeNode(root.val, right, left);
+        }
+        */
+
+        public TreeNode invertTree(TreeNode root) {
+            if (root == null) return null;
+            LinkedList<TreeNode> queue = new LinkedList<>();
+            queue.offer(root);
+            while (!queue.isEmpty()) {
+                int size = queue.size();
+                while (size-- > 0) {
+                    TreeNode node = queue.poll();
+                    TreeNode tmp = node.left;
+                    node.left = node.right;
+                    node.right = tmp;
+                    if (node.left != null) queue.offer(node.left);
+                    if (node.right != null) queue.offer(node.right);
+
+                }
+            }
+            return root;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

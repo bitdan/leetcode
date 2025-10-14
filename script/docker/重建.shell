@@ -1,0 +1,16 @@
+# docker-compose 只在“创建容器”时加载挂载卷, 修改配置需要重建
+
+docker stop mysql && docker rm mysql
+docker-compose up -d mysql
+
+# 常看慢日志
+SHOW VARIABLES LIKE 'group_concat_max_len';
+
+SHOW VARIABLES LIKE 'slow_query_log';
+
+SHOW VARIABLES LIKE 'slow_query_log_file';
+
+SHOW VARIABLES LIKE 'long_query_time';
+
+SHOW GLOBAL STATUS LIKE 'Slow_queries';
+

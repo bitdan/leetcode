@@ -1,5 +1,6 @@
 # docker-compose 只在“创建容器”时加载挂载卷, 修改配置需要重建
 
+chmod -R 777 /docker
 docker stop mysql && docker rm mysql
 docker-compose up -d mysql
 

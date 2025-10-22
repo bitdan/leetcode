@@ -1,0 +1,42 @@
+version: '3.8'
+services:
+  mysql-master:
+    image: mysql:5.7.43
+    container_name: mysql-master
+    environment:
+      MYSQL_ROOT_PASSWORD: hykj188?AA
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - /docker/mysql/data/:/var/lib/mysql
+      - /docker/mysql/conf/:/etc/mysql/conf.d/
+      - /docker/mysql/logs/:/var/log/mysql/
+    command:
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog_format=row
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+
+
+  mysql-slave:
+    image: mysql:5.7.43
+    container_name: mysql-slave
+    environment:
+      MYSQL_ROOT_PASSWORD: hykj188?AA
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./slave/data/:/var/lib/mysql
+      - ./slave/conf/:/etc/mysql/conf.d
+    command:
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog_format=row
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read_only=1
+    depends_on:
+      - mysql-master

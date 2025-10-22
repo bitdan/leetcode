@@ -81,6 +81,14 @@ public class TreeNode {
         return root;
     }
 
+    public static TreeNode find(TreeNode root, int val) {
+        if (root == null) return null;
+        if (root.val == val) return root;
+        TreeNode left = find(root.left, val);
+        if (left != null) return left;
+        return find(root.right, val);
+    }
+
     @Override
     public String toString() {
         List<String> result = new ArrayList<>();

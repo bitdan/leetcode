@@ -1,8 +1,9 @@
 # docker-compose 只在“创建容器”时加载挂载卷, 修改配置需要重建
 
 chmod -R 777 /docker
+chmod 644 /docker/mysql/conf/my.cnf
 docker stop mysql && docker rm mysql
-docker-compose up -d mysql
+docker compose up -d mysql
 
 # 常看慢日志
 SHOW VARIABLES LIKE 'group_concat_max_len';

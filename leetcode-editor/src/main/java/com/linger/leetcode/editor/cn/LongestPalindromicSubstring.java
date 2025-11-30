@@ -43,39 +43,28 @@ public class LongestPalindromicSubstring {
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public String longestPalindrome(String s) {
-            int n = s.length();
-            if (n < 2) {
-                return s;
-            }
-            boolean[][] dp = new boolean[n][n];
-            int maxLen = 1;
-            int begin = 0;
-            for (int i = 0; i < n; i++) {
-                dp[i][i] = true;
-            }
+            if (s == null || s.length() < 2) return s;
+            int start = 0, end = 0;
 
-            for (int len = 2; len <= n; len++) {
-                for (int i = 0; i < n; i++) {
-                    int j = len + i - 1;
-                    if (j >= n) {
-                        break;
-                    }
-                    if (s.charAt(i) != s.charAt(j)) {
-                        dp[i][j] = false;
-                    } else {
-                        if (j - i < 3) {
-                            dp[i][j] = true;
-                        }else {
-                            dp[i][j] = dp[i + 1][j - 1];
-                        }
-                    }
-                    if(dp[i][j]&&len>maxLen){
-                        maxLen = len;
-                        begin = i;
-                    }
+            for (int i = 0; i < s.length(); i++) {
+                int len1 = expand(s, i, i);     // 奇数回文（以 i 为中心）
+                int len2 = expand(s, i, i + 1); // 偶数回文（以 i 和 i+1 为中心）
+                int len = Math.max(len1, len2);
+
+                if (len > end - start) {
+                    start = i - (len - 1) / 2;
+                    end = i + len / 2;
                 }
             }
-            return s.substring(begin,begin+maxLen);
+            return s.substring(start, end + 1);
+        }
+
+        private int expand(String s, int left, int right) {
+            while (left >= 0 && right < s.length() && s.charAt(left) == s.charAt(right)) {
+                left--;
+                right++;
+            }
+            return right - left - 1;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

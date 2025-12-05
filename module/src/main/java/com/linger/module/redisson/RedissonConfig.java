@@ -1,16 +1,12 @@
 package com.linger.module.redisson;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.redisson.Redisson;
-import org.redisson.api.RedissonClient;
 import org.redisson.codec.JsonJacksonCodec;
-import org.redisson.config.Config;
+import org.redisson.spring.starter.RedissonAutoConfigurationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
 
 import javax.annotation.Resource;
-import java.io.IOException;
 
 /**
  * @version 1.0
@@ -23,15 +19,12 @@ public class RedissonConfig {
     @Resource
     private ObjectMapper objectMapper;
 
-    @Bean(destroyMethod = "shutdown")
-    public RedissonClient redissonClient() throws IOException {
-        // 读取配置文件
-        Config config = Config.fromYAML(new ClassPathResource("redisson.yml").getInputStream());
+    @Bean
+    public RedissonAutoConfigurationCustomizer redissonCustomizer() {
 
-        // 使用统一 ObjectMapper 创建 codec
-        JsonJacksonCodec codec = new JsonJacksonCodec(objectMapper);
-        config.setCodec(codec); // 覆盖 codec
-
-        return Redisson.create(config);
+        return config -> {
+            JsonJacksonCodec codec = new JsonJacksonCodec(objectMapper);
+            config.setCodec(codec);
+        };
     }
 }

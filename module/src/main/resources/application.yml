@@ -1,3 +1,7 @@
+spring:
+  profiles:
+    active: @profile.active@
+
 server:
   port: 9999
   undertow:
@@ -13,19 +17,6 @@ server:
       io: 8
       # 阻塞任务线程池, 当执行类似servlet请求阻塞操作, undertow会从这个线程池中取得线程,它的值设置取决于系统的负载
       worker: 256
-
-spring:
-  # Spring Data Redis 配置
-  data:
-    redis:
-      repositories:
-        enabled: false # 项目未使用到 Spring Data Redis 的 Repository，所以直接禁用，保证启动速度
-  redis:
-    host: 192.168.9.188 # 地址
-    port: 6379 # 端口
-    database: 15 # 数据库索引
-    redisson:
-      file: classpath:redisson.yml
 
 
 lock4j:

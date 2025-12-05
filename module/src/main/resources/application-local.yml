@@ -1,0 +1,13 @@
+spring:
+  # Spring Data Redis 配置
+  data:
+    redis:
+      repositories:
+        enabled: false # 项目未使用到 Spring Data Redis 的 Repository，所以直接禁用，保证启动速度
+  redis:
+    host: 43.156.83.246 # 地址
+    password: dudu0.0
+    port: 6379 # 端口
+    database: 0 # 数据库索引
+    redisson:
+      file: classpath:redisson-local.yml

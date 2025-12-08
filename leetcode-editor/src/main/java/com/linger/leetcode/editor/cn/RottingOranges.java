@@ -97,14 +97,11 @@ public class RottingOranges {
                         if (x < 0 || x >= m || y < 0 || y >= n || grid[x][y] != 1) {
                             continue;
                         }
-                        if (grid[x][y] == 1) {
 
-                            grid[x][y] = 2;
-                            queue.offer(new int[]{x, y});
-                            freshCount--;
-                            flag = true;
-                        }
-
+                        grid[x][y] = 2;
+                        queue.offer(new int[]{x, y});
+                        freshCount--;
+                        flag = true;
 
                     }
                 }

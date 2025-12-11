@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 public class RedisLockAspect {
 
     @Resource
-    private RedissonClient redissonClient;
+    RedissonClient redissonClient;
 
     private static final String DEFAULT_PROMPT = "请不要重复操作！";
     private static final String LOCK_PREFIX = "lock:";
@@ -145,26 +145,44 @@ public class RedisLockAspect {
         }
 
         try {
-            return parseSpEL(joinPoint, redisLock.prompt()).toString();
+            Object result = parseSpEL(joinPoint, redisLock.prompt());
+            // 处理解析结果为null的情况
+            if (result == null) {
+                log.warn("SpEL解析提示语返回null，使用默认提示语: {}", redisLock.prompt());
+                return DEFAULT_PROMPT;
+            }
+            return result.toString();
         } catch (Exception e) {
+            log.warn("解析提示语SpEL失败，使用默认提示语: {}", redisLock.prompt(), e);
             return DEFAULT_PROMPT;
         }
     }
 
     /** SpEL 工具 */
     private Object parseSpEL(ProceedingJoinPoint joinPoint, String expression) {
-        ExpressionParser parser = new SpelExpressionParser();
-        Expression exp = parser.parseExpression(expression);
-
-        MethodSignature sig = (MethodSignature) joinPoint.getSignature();
-        String[] paramNames = sig.getParameterNames();
-        Object[] args = joinPoint.getArgs();
-
-        StandardEvaluationContext context = new StandardEvaluationContext();
-        for (int i = 0; i < args.length; i++) {
-            context.setVariable(paramNames[i], args[i]);
+        if (expression == null || expression.trim().isEmpty()) {
+            return null;
         }
-        return exp.getValue(context);
+
+        try {
+            ExpressionParser parser = new SpelExpressionParser();
+            Expression exp = parser.parseExpression(expression);
+
+            MethodSignature sig = (MethodSignature) joinPoint.getSignature();
+            String[] paramNames = sig.getParameterNames();
+            Object[] args = joinPoint.getArgs();
+
+            StandardEvaluationContext context = new StandardEvaluationContext();
+            if (paramNames != null && args != null) {
+                for (int i = 0; i < Math.min(paramNames.length, args.length); i++) {
+                    context.setVariable(paramNames[i], args[i]);
+                }
+            }
+            return exp.getValue(context);
+        } catch (Exception e) {
+            log.warn("SpEL解析异常: {}", expression, e);
+            throw e; // 重新抛出异常，让调用方处理
+        }
     }
 
     /** class:method */

@@ -1,6 +1,7 @@
 package com.linger.module.annotation;
 
 
+import com.linger.module.util.LogFilterUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -68,7 +70,7 @@ public class RedisLockAspect {
 
     /** 解析 SpEL 并构建锁 key */
     private List<String> buildKeys(ProceedingJoinPoint joinPoint, RedisLock redisLock) {
-        String baseKey = LOCK_PREFIX + getBaseKey(joinPoint);
+        String baseKey = getDefaultKey(joinPoint);
 
         if (redisLock.key().isEmpty()) {
             return Collections.singletonList(baseKey);
@@ -185,9 +187,24 @@ public class RedisLockAspect {
         }
     }
 
-    /** class:method */
-    private String getBaseKey(ProceedingJoinPoint joinPoint) {
+    /**
+     * 默认key格式: lock:类名:方法名:参数值...
+     */
+    private String getDefaultKey(ProceedingJoinPoint joinPoint) {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        return joinPoint.getTarget().getClass().getSimpleName() + ":" + signature.getMethod().getName();
+        Method method = signature.getMethod();
+        String methodName = method.getName();
+        String className = joinPoint.getTarget().getClass().getSimpleName();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(className).append(":").append(methodName);
+
+        Object[] args = joinPoint.getArgs();
+        for (Object arg : args) {
+            if (LogFilterUtils.isNonLoggable(arg)) continue;
+            sb.append(":").append(arg);
+        }
+
+        return LOCK_PREFIX + sb;
     }
 }

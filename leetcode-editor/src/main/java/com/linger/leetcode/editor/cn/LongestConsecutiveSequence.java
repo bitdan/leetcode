@@ -61,7 +61,7 @@ public class LongestConsecutiveSequence {
                 set.add(num);
             }
             int res = 0;
-            for (int num : nums) {
+            for (int num : set) {
                 if (!set.contains(num - 1)) {
                     int curNum = num;
                     int curLen = 1;

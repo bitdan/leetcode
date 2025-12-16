@@ -70,7 +70,13 @@ public class GroupAnagrams {
                 char[] charArray = str.toCharArray();
                 Arrays.sort(charArray);
                 String newStr = new String(charArray);
-                map.computeIfAbsent(newStr, k -> new ArrayList<>()).add(str);
+                if (map.containsKey(newStr)) {
+                    map.get(newStr).add(str);
+                } else {
+                    List<String> list = new ArrayList<>();
+                    list.add(str);
+                    map.put(newStr, list);
+                }
             }
             return new ArrayList<>(map.values());
         }

@@ -47,25 +47,33 @@ import java.util.List;
 public class FindAllAnagramsInAString {
     public static void main(String[] args) {
         Solution solution = new FindAllAnagramsInAString().new Solution();
-        log.info("{}", solution.findAnagrams("abab", "ab"));
+        log.info("{}", solution.findAnagrams("cbaebabacd", "abc"));
 
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public List<Integer> findAnagrams(String s, String p) {
-            int length = s.length();
-            char[] sub = p.toCharArray();
-            Arrays.sort(sub);
             ArrayList<Integer> list = new ArrayList<>();
-            for (int i = 0; i < length - p.length() + 1; i++) {
-                String substring = s.substring(i, i + p.length());
-                char[] charArray = substring.toCharArray();
-                Arrays.sort(charArray);
-                if (Arrays.equals(charArray, sub)) {
-                    list.add(i);
-                }
+            if (s.length() < p.length()) return list;
+            int[] need = new int[26];
+            int[] window = new int[26];
+            for (int i = 0; i < p.length(); i++) {
+                need[p.charAt(i) - 'a']++;
+            }
+            int left = 0;
 
+            int right = 0;
+            while (right < s.length()) {
+                window[s.charAt(right) - 'a']++;
+                right++;
+                if (right - left == p.length()) {
+                    if (Arrays.equals(need, window)) {
+                        list.add(left);
+                    }
+                    window[s.charAt(left) - 'a']--;
+                    left++;
+                }
             }
             return list;
         }

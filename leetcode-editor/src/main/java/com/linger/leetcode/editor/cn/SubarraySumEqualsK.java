@@ -41,7 +41,7 @@ import java.util.HashMap;
 public class SubarraySumEqualsK {
     public static void main(String[] args) {
         Solution solution = new SubarraySumEqualsK().new Solution();
-        log.info("{}", solution.subarraySum(new int[]{1, 1, 1}, 2));
+        log.info("{}", solution.subarraySum(new int[]{1, 2, 3}, 3));
     }
 
     /**
@@ -55,18 +55,18 @@ public class SubarraySumEqualsK {
         public int subarraySum(int[] nums, int k) {
             HashMap<Integer, Integer> map = new HashMap<>();
             map.put(0, 1); // 初始化
-            int count = 0;
-            int preifxSum = 0;
-            for (int num : nums) {
-                preifxSum += num;
+            int res = 0;
+            int sum = 0;
+            // map 是每个数字的统计和, 减去k 就是剩余出现过得, 统计出现几次就行
+            for (int i = 0; i < nums.length; i++) {
+                sum += nums[i];
                 // // 如果存在prefixSum - k的前缀和，则增加计数
-                if (map.containsKey(preifxSum - k)) {
-                    count += map.get(preifxSum - k);
+                if (map.containsKey(sum - k)) {
+                    res += map.get(sum - k);
                 }
-                // 更新当前前缀和的出现次数
-                map.put(preifxSum, map.getOrDefault(preifxSum, 0) + 1);
+                map.put(sum, map.getOrDefault(sum, 0) + 1);
             }
-            return count;
+            return res;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

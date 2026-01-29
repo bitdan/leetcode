@@ -16,26 +16,32 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 public class PDFTextRemover {
 
     public enum RemoveType {
-        SHIP_FROM, SHIP_TO, BOTH
+        SHIP_FROM,
+        SHIP_TO
     }
 
     /**
-     * 核心方法：移除 SHIP FROM / SHIP TO 地址
+     * 核心方法：移除 SHIP FROM / SHIP TO 地址（支持多个类型）
      */
-    public static byte[] removeShipInfo(String pdfUrl, RemoveType removeType) throws Exception {
+    public static byte[] removeShipInfo(String pdfUrl, Set<RemoveType> removeTypes) throws Exception {
         try (InputStream in = new URL(pdfUrl).openStream();
              PDDocument document = PDDocument.load(in)) {
-            log.info("🔍 正在处理 PDF: {}", document.getNumberOfPages());
+
+            log.info("🔍 正在处理 PDF，共 {} 页", document.getNumberOfPages());
+
             List<TextRegion> shipFromRegions = new ArrayList<>();
             List<TextRegion> shipToRegions = new ArrayList<>();
 
             PDFTextStripper stripper = new PDFTextStripper() {
+
                 int currentPage = 0;
                 boolean inShipFromSection = false;
                 boolean inShipToSection = false;
@@ -45,7 +51,7 @@ public class PDFTextRemover {
                     currentPage = getCurrentPageNo() - 1;
                     inShipFromSection = false;
                     inShipToSection = false;
-                    log.info("[P%d] 🔍 正在处理第 %d 页...", currentPage + 1, currentPage + 1);
+                    log.info("[P{}] 🔍 开始解析页面", currentPage + 1);
                 }
 
                 @Override
@@ -60,48 +66,60 @@ public class PDFTextRemover {
                     float x2 = last.getXDirAdj() + last.getWidthDirAdj();
                     float y = first.getYDirAdj();
 
-                    // 检测标签
-
+                    // 标签检测
                     if (text.startsWith("SHIP FROM:")) {
                         inShipFromSection = true;
-                        log.info("[P%d] 🔍 检测到 SHIP FROM 标签", currentPage + 1);
-
+                        log.info("[P{}] 🔍 检测到 SHIP FROM", currentPage + 1);
                     } else if (text.startsWith("SHIP TO:")) {
                         inShipToSection = true;
-                        log.info("[P%d] 🔍 检测到 SHIP TO 标签", currentPage + 1);
-
+                        log.info("[P{}] 🔍 检测到 SHIP TO", currentPage + 1);
                     }
 
                     float paddingX = 2f;
                     float paddingY = 0f;
 
+                    float baseWidth = (x2 - x1);
                     float heightf = first.getHeightDir() * 2.1f;
-                    float widthf = (x2 - x1) * 4f;
 
-                    // 然后在创建TextRegion时使用新的widthf和heightf值
-                    if (inShipFromSection && (removeType == RemoveType.SHIP_FROM || removeType == RemoveType.BOTH)) {
-                        shipFromRegions.add(new TextRegion(currentPage, x1 - paddingX, y - paddingY, x1 + widthf + paddingX, y + heightf + paddingY));
+                    // SHIP FROM：宽度 *3
+                    if (inShipFromSection && removeTypes.contains(RemoveType.SHIP_FROM)) {
+                        float widthf = baseWidth * 2.5f;
+
+                        shipFromRegions.add(new TextRegion(
+                                currentPage,
+                                x1 - paddingX,
+                                y - paddingY,
+                                x1 + widthf + paddingX,
+                                y + heightf + paddingY
+                        ));
                         inShipFromSection = false;
                     }
-                    if (inShipToSection && (removeType == RemoveType.SHIP_TO || removeType == RemoveType.BOTH)) {
-                        shipToRegions.add(new TextRegion(currentPage, x1 - paddingX, y - paddingY, x1 + widthf + paddingX, y + heightf + paddingY));
+
+                    // SHIP TO：宽度 *4
+                    if (inShipToSection && removeTypes.contains(RemoveType.SHIP_TO)) {
+                        float widthf = baseWidth * 4f;
+
+                        shipToRegions.add(new TextRegion(
+                                currentPage,
+                                x1 - paddingX,
+                                y - paddingY,
+                                x1 + widthf + paddingX,
+                                y + heightf + paddingY
+                        ));
                         inShipToSection = false;
                     }
-
 
                     try {
                         super.writeString(string, textPositions);
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        log.error("PDF 解析异常", e);
                     }
                 }
             };
 
             stripper.getText(document);
 
-            // 应用遮罩
-            applyMasks(document, shipFromRegions, shipToRegions, removeType);
-
+            applyMasks(document, shipFromRegions, shipToRegions, removeTypes);
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             document.save(baos);
@@ -110,51 +128,54 @@ public class PDFTextRemover {
     }
 
     /**
-     * 应用遮罩到 PDF 页面
+     * 应用遮罩
      */
-    private static void applyMasks(PDDocument document, List<TextRegion> shipFromRegions,
-                                   List<TextRegion> shipToRegions, RemoveType removeType) throws Exception {
+    private static void applyMasks(PDDocument document,
+                                   List<TextRegion> shipFromRegions,
+                                   List<TextRegion> shipToRegions,
+                                   Set<RemoveType> removeTypes) throws Exception {
 
+        log.info("🎨 开始应用遮罩");
 
-        log.info("🎨 开始应用遮罩...");
         for (int i = 0; i < document.getNumberOfPages(); i++) {
             PDPage page = document.getPage(i);
-            float pageHeight = page.getMediaBox().getHeight(); // PDF高度，用于翻转Y坐标
+            float pageHeight = page.getMediaBox().getHeight();
 
-            try (PDPageContentStream cs = new PDPageContentStream(document, page, AppendMode.APPEND, true)) {
-                cs.setNonStrokingColor(255, 255, 255); // 白色遮罩
+            try (PDPageContentStream cs =
+                         new PDPageContentStream(document, page, AppendMode.APPEND, true)) {
 
-                if (removeType == RemoveType.SHIP_FROM || removeType == RemoveType.BOTH) {
+                cs.setNonStrokingColor(255, 255, 255);
+
+                if (removeTypes.contains(RemoveType.SHIP_FROM)) {
                     for (TextRegion r : shipFromRegions) {
                         if (r.pageIndex == i) {
                             float correctedY = pageHeight - r.y2;
                             cs.addRect(r.x1, correctedY, r.x2 - r.x1, r.y2 - r.y1);
                             cs.fill();
-                            log.info("[P%d] 🎨 应用 SHIP FROM 遮罩: %.1f×%.1f @(%.1f,%.1f)",
-                                    i + 1, r.x2 - r.x1, r.y2 - r.y1, r.x1, correctedY);
+                            log.info("[P{}] 🎨 SHIP FROM 遮罩: {}×{}",
+                                    i + 1, r.x2 - r.x1, r.y2 - r.y1);
                         }
                     }
                 }
 
-                if (removeType == RemoveType.SHIP_TO || removeType == RemoveType.BOTH) {
+                if (removeTypes.contains(RemoveType.SHIP_TO)) {
                     for (TextRegion r : shipToRegions) {
                         if (r.pageIndex == i) {
                             float correctedY = pageHeight - r.y2;
                             cs.addRect(r.x1, correctedY, r.x2 - r.x1, r.y2 - r.y1);
                             cs.fill();
-                            log.info("[P%d] 🎨 应用 SHIP TO 遮罩: %.1f×%.1f @(%.1f,%.1f)",
-                                    i + 1, r.x2 - r.x1, r.y2 - r.y1, r.x1, correctedY);
-
+                            log.info("[P{}] 🎨 SHIP TO 遮罩: {}×{}",
+                                    i + 1, r.x2 - r.x1, r.y2 - r.y1);
                         }
                     }
                 }
             }
         }
-        log.info("✨ 遮罩应用完成！");
+        log.info("✨ 遮罩完成");
     }
 
     /**
-     * 保存文字遮罩区域
+     * 遮罩区域模型
      */
     private static class TextRegion {
         int pageIndex;
@@ -169,16 +190,24 @@ public class PDFTextRemover {
         }
     }
 
-
+    /**
+     * 测试入口
+     */
     public static void main(String[] args) throws Exception {
         String pdfUrl = "https://img.botaili.com/erp/2026/01/28/FBA15LBJHG76_PackageLabel_A4_4.pdf";
-        byte[] result = removeShipInfo(pdfUrl, RemoveType.BOTH);
 
+        Set<RemoveType> removeTypes = EnumSet.of(
+                RemoveType.SHIP_TO,
+                RemoveType.SHIP_FROM
+        );
+
+        byte[] result = removeShipInfo(pdfUrl, removeTypes);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmssSSS");
         String timeStamp = LocalDateTime.now().format(formatter);
         String fileName = "redacted_" + timeStamp + ".pdf";
 
         Files.write(Paths.get(fileName), result);
-        log.info("✅ 新 PDF 已生成: " + fileName);
+
+        log.info("✅ 新 PDF 已生成: {}", fileName);
     }
 }

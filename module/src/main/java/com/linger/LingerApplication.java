@@ -16,9 +16,9 @@ import java.net.UnknownHostException;
  */
 @Slf4j
 @SpringBootApplication
-public class OOOOApplication {
+public class LingerApplication {
     public static void main(String[] args) throws UnknownHostException {
-        ConfigurableApplicationContext applicationContext = SpringApplication.run(OOOOApplication.class, args);
+        ConfigurableApplicationContext applicationContext = SpringApplication.run(LingerApplication.class, args);
         Environment env = applicationContext.getEnvironment();
         String ip = InetAddress.getLocalHost().getHostAddress();
         String port = env.getProperty("server.port");

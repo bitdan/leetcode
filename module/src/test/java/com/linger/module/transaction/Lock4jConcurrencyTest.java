@@ -1,6 +1,6 @@
 package com.linger.module.transaction;
 
-import com.linger.OOOOApplication;
+import com.linger.LingerApplication;
 import com.linger.module.transaction.service.QuotationService;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
  * @date 2025/7/10 09:58:56
  */
 @Slf4j
-@SpringBootTest(classes = OOOOApplication.class)
+@SpringBootTest(classes = LingerApplication.class)
 public class Lock4jConcurrencyTest {
 
     @Autowired

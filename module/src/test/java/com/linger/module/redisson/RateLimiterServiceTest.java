@@ -1,6 +1,7 @@
 package com.linger.module.redisson;
 
 import com.linger.module.redisson.service.RateLimiterService;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * Redisson 限流器测试
  */
 @SpringBootTest
+@Slf4j
 public class RateLimiterServiceTest {
 
     @Autowired
@@ -37,7 +39,9 @@ public class RateLimiterServiceTest {
 
         Assertions.assertTrue(rateLimiterService.tryAcquire(limiterKey, rate, interval, RateIntervalUnit.SECONDS));
         Assertions.assertTrue(rateLimiterService.tryAcquire(limiterKey, rate, interval, RateIntervalUnit.SECONDS));
-        Assertions.assertFalse(rateLimiterService.tryAcquire(limiterKey, rate, interval, RateIntervalUnit.SECONDS));
+        boolean third = rateLimiterService.tryAcquire(limiterKey, rate, interval, RateIntervalUnit.SECONDS);
+        log.info("Third acquire result: {}", third);
+        Assertions.assertFalse(third);
 
         Thread.sleep(2100);
         Assertions.assertTrue(rateLimiterService.tryAcquire(limiterKey, rate, interval, RateIntervalUnit.SECONDS));
@@ -50,6 +54,8 @@ public class RateLimiterServiceTest {
 
         Assertions.assertTrue(rateLimiterService.tryAcquire(limiterKey, 3, rate, interval, RateIntervalUnit.SECONDS));
         Assertions.assertTrue(rateLimiterService.tryAcquire(limiterKey, 2, rate, interval, RateIntervalUnit.SECONDS));
-        Assertions.assertFalse(rateLimiterService.tryAcquire(limiterKey, 1, rate, interval, RateIntervalUnit.SECONDS));
+        boolean overflow = rateLimiterService.tryAcquire(limiterKey, 1, rate, interval, RateIntervalUnit.SECONDS);
+        log.info("Overflow acquire result: {}", overflow);
+        Assertions.assertFalse(overflow);
     }
 }

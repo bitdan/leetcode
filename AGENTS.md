@@ -33,6 +33,7 @@ Use Maven from the repo root:
 - Testing stack: Spring Boot Test (JUnit 5 via `spring-boot-starter-test`).
 - Place tests under `module/src/test/java` and name them `*Test`.
 - Keep unit tests fast; add integration tests only when needed.
+- Use `@Slf4j` in tests and log key assertions/results so test runs emit useful output.
 - No explicit coverage threshold is configured.
 
 ## Commit & Pull Request Guidelines

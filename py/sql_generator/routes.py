@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/v1", tags=["sql-generator"])
 
 
 class SqlGeneratorRequest(BaseModel):
-    account: str = Field(..., description="账号参数，格式如 QD-US")
+    account: str = Field(default="", description="账号站点参数（可空），格式如 QD-US")
     question: str = Field(..., description="用户问题")
 
 

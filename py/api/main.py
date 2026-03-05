@@ -55,12 +55,20 @@ class ChatRequest(BaseModel):
     topic: str
 
 
+class TraceStep(BaseModel):
+    node: str
+    input_summary: str
+    output_summary: str
+    decision: str
+    latency_ms: int
+
+
 class ChatResponse(BaseModel):
     topic: str
     draft: str
     corrections: List[str]
     attempts: int
-    trace: List[str]
+    trace: List[TraceStep]
 
 
 @app.get("/health")

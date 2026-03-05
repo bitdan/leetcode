@@ -1,6 +1,7 @@
 import logging
 import operator
 import sys
+import time
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
@@ -34,7 +35,7 @@ class TextState(TypedDict):
     topic: str
     draft: str
     corrections: Annotated[list[str], operator.add]
-    trace: Annotated[list[str], operator.add]
+    trace: Annotated[list[dict], operator.add]
     attempts: int
     next_action: Literal["refine", "end"]
 
@@ -46,8 +47,16 @@ def _is_feedback_good_enough(feedback: str, attempts: int) -> bool:
     return attempts >= MAX_ATTEMPTS
 
 
+def _short_text(text: str, limit: int = 80) -> str:
+    value = (text or "").replace("\n", " ").strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "..."
+
+
 def generate_draft(state: TextState) -> dict:
     """节点1：按 topic 生成初稿"""
+    start = time.perf_counter()
     prompt = PromptTemplate.from_template(
         "请围绕主题'{topic}'撰写一篇简洁的文章。要求：\n"
         "1. 内容准确、逻辑清晰\n"
@@ -57,15 +66,25 @@ def generate_draft(state: TextState) -> dict:
     )
     chain = prompt | llm
     draft = chain.invoke({"topic": state["topic"]}).content
+    latency_ms = int((time.perf_counter() - start) * 1000)
     logger.info("[generate] 生成初稿完成")
     return {
         "draft": draft,
-        "trace": [f"generate: 已根据 topic 生成初稿（长度={len(draft)}）"],
+        "trace": [
+            {
+                "node": "generate",
+                "input_summary": f"topic={state['topic']}",
+                "output_summary": f"draft_len={len(draft)}, preview={_short_text(draft)}",
+                "decision": "to critique",
+                "latency_ms": latency_ms,
+            }
+        ],
     }
 
 
 def critique_draft(state: TextState) -> dict:
     """节点2：评估当前草稿，并决定继续 refine 还是结束"""
+    start = time.perf_counter()
     attempts = state.get("attempts", 0) + 1
 
     if attempts >= 2:
@@ -84,18 +103,28 @@ def critique_draft(state: TextState) -> dict:
     feedback = chain.invoke({"draft": state["draft"]}).content
     good_enough = _is_feedback_good_enough(feedback, attempts)
     next_action: Literal["refine", "end"] = "end" if good_enough else "refine"
+    latency_ms = int((time.perf_counter() - start) * 1000)
 
     logger.info("[critique] 第%s轮完成，next_action=%s", attempts, next_action)
     return {
         "corrections": [feedback],
         "attempts": attempts,
         "next_action": next_action,
-        "trace": [f"critique: 第{attempts}轮评估完成，决策={next_action}"],
+        "trace": [
+            {
+                "node": "critique",
+                "input_summary": f"attempt={attempts}, draft_len={len(state.get('draft', ''))}",
+                "output_summary": _short_text(feedback),
+                "decision": next_action,
+                "latency_ms": latency_ms,
+            }
+        ],
     }
 
 
 def refine_draft(state: TextState) -> dict:
     """节点3：基于最新 feedback 改写草稿"""
+    start = time.perf_counter()
     feedback = state["corrections"][-1] if state.get("corrections") else "请优化逻辑与表达"
     prompt = PromptTemplate.from_template(
         "请根据以下反馈重写文本：\n反馈：{feedback}\n\n原文：{draft}\n\n"
@@ -103,10 +132,19 @@ def refine_draft(state: TextState) -> dict:
     )
     chain = prompt | llm
     new_draft = chain.invoke({"feedback": feedback, "draft": state["draft"]}).content
+    latency_ms = int((time.perf_counter() - start) * 1000)
     logger.info("[refine] 重写完成")
     return {
         "draft": new_draft,
-        "trace": [f"refine: 已根据第{state.get('attempts', 0)}轮反馈完成重写"],
+        "trace": [
+            {
+                "node": "refine",
+                "input_summary": _short_text(feedback),
+                "output_summary": f"draft_len={len(new_draft)}, preview={_short_text(new_draft)}",
+                "decision": "to critique",
+                "latency_ms": latency_ms,
+            }
+        ],
     }
 
 
@@ -145,8 +183,8 @@ def run_workflow(topic: str) -> TextState:
 
     final_state = graph.invoke(init_state)
     logger.info("工作流完成, attempts=%s", final_state.get("attempts", 0))
-    for line in final_state.get("trace", []):
-        logger.info("[trace] %s", line)
+    for step in final_state.get("trace", []):
+        logger.info("[trace] %s", step)
     return final_state
 
 

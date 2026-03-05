@@ -60,6 +60,7 @@ class ChatResponse(BaseModel):
     draft: str
     corrections: List[str]
     attempts: int
+    trace: List[str]
 
 
 @app.get("/health")
@@ -77,6 +78,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             draft=final_state.get("draft", ""),
             corrections=final_state.get("corrections", []),
             attempts=final_state.get("attempts", 0),
+            trace=final_state.get("trace", []),
         )
     except Exception as e:
         logger.exception("/api/v1/chat 调用失败")

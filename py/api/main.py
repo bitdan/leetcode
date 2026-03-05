@@ -1,11 +1,12 @@
-import sys
-import os
 import logging
+import os
+import sys
+from pathlib import Path
+from typing import List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 from pydantic import BaseModel
-from typing import List
 
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
@@ -13,6 +14,7 @@ sys.path.append(str(project_root))
 from langgraph.LangGraph import run_workflow
 from auth.routes import router as auth_router
 from game.routes import router as game_router
+from sql_generator.routes import router as sql_generator_router
 
 
 app = FastAPI(title="Tool Hub API", version="1.0.0")
@@ -45,6 +47,9 @@ app.include_router(auth_router)
 
 # 注册游戏路由
 app.include_router(game_router)
+
+# 注册SQL生成路由
+app.include_router(sql_generator_router)
 
 class ChatRequest(BaseModel):
     topic: str

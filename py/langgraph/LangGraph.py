@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
 import config
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 

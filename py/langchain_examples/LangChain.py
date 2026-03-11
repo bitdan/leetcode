@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -7,7 +6,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 import config
 

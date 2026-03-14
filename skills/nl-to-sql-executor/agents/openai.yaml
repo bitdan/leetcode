@@ -1,4 +1,0 @@
-interface:
-  display_name: "NL to SQL Executor"
-  short_description: "自然语言生成 SQL、执行查询并导出结果"
-  default_prompt: "Use $nl-to-sql-executor to convert a natural-language data question plus schema details into safe SQL, then run and export the results."

@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 
 from mcp_server.java_stacktrace import analyze_java_stacktrace
+from mcp_server.sql_exporter import run_sql_export
+from mcp_server.sql_generator import generate_nl_sql
 
 
 SERVER_INFO = {
@@ -49,7 +51,82 @@ def _tool_definitions() -> List[Dict[str, Any]]:
                 "required": ["stacktrace"],
                 "additionalProperties": False,
             },
-        }
+        },
+        {
+            "name": "sql_exporter_tool",
+            "description": "Validate, execute, and export a read-only SQL query using the sql-exporter skill workflow.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "db_kind": {
+                        "type": "string",
+                        "enum": ["sqlite", "sqlalchemy"],
+                        "description": "Database connection mode. Use sqlalchemy for MySQL/PostgreSQL and sqlite for local files.",
+                    },
+                    "db_path": {
+                        "type": "string",
+                        "description": "SQLite database path when db_kind=sqlite.",
+                        "default": "",
+                    },
+                    "dsn": {
+                        "type": "string",
+                        "description": "SQLAlchemy DSN when db_kind=sqlalchemy.",
+                        "default": "",
+                    },
+                    "sql": {
+                        "type": "string",
+                        "description": "Inline read-only SQL text. Provide sql or sql_file.",
+                        "default": "",
+                    },
+                    "sql_file": {
+                        "type": "string",
+                        "description": "Path to a .sql file. Provide sql or sql_file.",
+                        "default": "",
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Named query parameters as a JSON object.",
+                        "default": {},
+                    },
+                    "export": {
+                        "type": "string",
+                        "enum": ["csv", "json", "xlsx"],
+                        "description": "Export file format.",
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "Output file path for the exported result.",
+                    },
+                    "max_rows": {
+                        "type": "integer",
+                        "description": "Maximum rows to fetch and export.",
+                        "default": 5000,
+                    },
+                },
+                "required": ["db_kind", "export", "output"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "nl_to_sql_generator_tool",
+            "description": "Generate read-only SQL from a natural-language analytics question using the repository's Amazon order SQL generator workflow.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Natural-language question such as 近30天销量最高的10个SKU.",
+                    },
+                    "account": {
+                        "type": "string",
+                        "description": "Optional account-site token such as QD-US.",
+                        "default": "",
+                    },
+                },
+                "required": ["question"],
+                "additionalProperties": False,
+            },
+        },
     ]
 
 
@@ -97,25 +174,46 @@ async def _handle_tools_list(message_id: Any) -> Dict[str, Any]:
 async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str, Any]:
     tool_name = params.get("name")
     arguments = params.get("arguments") or {}
-    if tool_name != "analyze_java_stacktrace_tool":
-        return _jsonrpc_error(message_id, -32601, f"Unknown tool: {tool_name}")
+    try:
+        if tool_name == "analyze_java_stacktrace_tool":
+            stacktrace = str(arguments.get("stacktrace") or "").strip()
+            context = str(arguments.get("context") or "").strip()
+            if not stacktrace:
+                return _jsonrpc_error(message_id, -32602, "stacktrace is required")
+            result = analyze_java_stacktrace(stacktrace=stacktrace, context=context)
+        elif tool_name == "sql_exporter_tool":
+            result = run_sql_export(
+                db_kind=str(arguments.get("db_kind") or "").strip(),
+                db_path=str(arguments.get("db_path") or "").strip(),
+                dsn=str(arguments.get("dsn") or "").strip(),
+                sql=str(arguments.get("sql") or ""),
+                sql_file=str(arguments.get("sql_file") or "").strip(),
+                params=arguments.get("params") if isinstance(arguments.get("params"), dict) else {},
+                export=str(arguments.get("export") or "").strip(),
+                output=str(arguments.get("output") or "").strip(),
+                max_rows=int(arguments.get("max_rows") or 5000),
+            )
+        elif tool_name == "nl_to_sql_generator_tool":
+            question = str(arguments.get("question") or "").strip()
+            account = str(arguments.get("account") or "").strip()
+            if not question:
+                return _jsonrpc_error(message_id, -32602, "question is required")
+            result = generate_nl_sql(question=question, account=account)
+        else:
+            return _jsonrpc_error(message_id, -32601, f"Unknown tool: {tool_name}")
+    except Exception as exc:
+        return _jsonrpc_error(message_id, -32001, str(exc))
 
-    stacktrace = str(arguments.get("stacktrace") or "").strip()
-    context = str(arguments.get("context") or "").strip()
-    if not stacktrace:
-        return _jsonrpc_error(message_id, -32602, "stacktrace is required")
-
-    analysis = analyze_java_stacktrace(stacktrace=stacktrace, context=context)
     return _jsonrpc_result(
         message_id,
         {
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps(analysis, ensure_ascii=False, indent=2),
+                    "text": json.dumps(result, ensure_ascii=False, indent=2),
                 }
             ],
-            "structuredContent": analysis,
+            "structuredContent": result,
             "isError": False,
         },
     )

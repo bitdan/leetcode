@@ -18,6 +18,11 @@ from auth.routes import router as auth_router
 from game.routes import router as game_router
 from sql_generator.routes import router as sql_generator_router
 
+try:
+    from mcp_server.server import router as mcp_java_router
+except ImportError:
+    mcp_java_router = None
+
 
 app = FastAPI(title="Tool Hub API", version="1.0.0")
 
@@ -154,6 +159,11 @@ app.include_router(game_router)
 
 # 注册SQL生成路由
 app.include_router(sql_generator_router)
+
+if mcp_java_router is not None:
+    app.include_router(mcp_java_router)
+else:
+    logger.warning("MCP server dependency not available; skipping /mcp/java routes")
 
 class ChatRequest(BaseModel):
     topic: str

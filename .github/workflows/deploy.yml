@@ -3,7 +3,8 @@ name: Deploy API
 on:
   push:
     paths:
-      - "py/**"            # 只监控 py 目录的变动
+      - "py/**"
+      - "skills/**"
   workflow_dispatch:       # 支持手动触发
 
 jobs:
@@ -27,24 +28,22 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 4. 构建 Docker 镜像（在 py/ 目录）
+      # 4. 构建 Docker 镜像（从仓库根目录构建，包含 py/ 和 skills/）
       - name: Build Docker image
-        working-directory: py
         run: |
           TIMESTAMP=$(TZ="Asia/Shanghai" date +%Y%m%d-%H%M%S)
           IMAGE_TAG="biasoo/langgraph-api:$TIMESTAMP"
           LATEST_TAG="biasoo/langgraph-api:latest"
           echo "Building image $IMAGE_TAG"
-          docker build -t $IMAGE_TAG -t $LATEST_TAG .
+          docker build -f py/Dockerfile -t $IMAGE_TAG -t $LATEST_TAG .
           
           # 保存 timestamp 到文件，使用上海时区
-          echo $TIMESTAMP > build_timestamp.txt
+          echo $TIMESTAMP > py/build_timestamp.txt
 
       # 5. 推送镜像到 Docker Hub
       - name: Push Docker image
-        working-directory: py
         run: |
-          TIMESTAMP=$(cat build_timestamp.txt)
+          TIMESTAMP=$(cat py/build_timestamp.txt)
           docker push biasoo/langgraph-api:$TIMESTAMP
           docker push biasoo/langgraph-api:latest
           echo "镜像已推送到 Docker Hub: https://hub.docker.com/repository/docker/biasoo/langgraph-api"

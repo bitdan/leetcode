@@ -1,9 +1,11 @@
-﻿import importlib.util
+import importlib.util
 from pathlib import Path
 from typing import Dict
 
+from mcp_server.path_utils import find_repo_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+PROJECT_ROOT = find_repo_root(Path(__file__))
 SKILL_STACKTRACE_SCRIPT = PROJECT_ROOT / "skills" / "java-stacktrace-analyzer" / "scripts" / "analyze_stacktrace.py"
 
 

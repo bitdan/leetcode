@@ -1,9 +1,11 @@
-﻿import importlib.util
+import importlib.util
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from mcp_server.path_utils import find_repo_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+PROJECT_ROOT = find_repo_root(Path(__file__))
 SKILL_EXPORTER_SCRIPT = PROJECT_ROOT / "skills" / "sql-exporter" / "scripts" / "export_sql.py"
 
 

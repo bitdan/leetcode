@@ -15,13 +15,14 @@ def main():
     """启动API服务器"""
     # 设置环境变量
     os.environ.setdefault("LOG_LEVEL", "INFO")
+    reload_enabled = os.getenv("UVICORN_RELOAD", "false").lower() == "true"
     
     # 启动服务器
     uvicorn.run(
         "api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=reload_enabled,
         log_level="info",
         access_log=False,
     )

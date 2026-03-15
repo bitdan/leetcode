@@ -1,9 +1,11 @@
-﻿import importlib.util
+import importlib.util
 from pathlib import Path
 from typing import Any, Dict
 
+from mcp_server.path_utils import find_repo_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+PROJECT_ROOT = find_repo_root(Path(__file__))
 SKILL_GENERATOR_SCRIPT = PROJECT_ROOT / "skills" / "nl-to-sql-generator" / "scripts" / "generate_sql.py"
 
 

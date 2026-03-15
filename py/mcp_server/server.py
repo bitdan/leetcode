@@ -22,7 +22,9 @@ PROTOCOL_VERSION = "2024-11-05"
 
 @dataclass
 class McpSession:
+    # 每个 SSE 连接都会对应一个会话；客户端后续通过 session_id 往 /messages 发 JSON-RPC 请求。
     session_id: str
+    # queue 用来把服务端响应异步推回到 SSE 长连接。
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     initialized: bool = False
 
@@ -31,6 +33,7 @@ SESSIONS: Dict[str, McpSession] = {}
 
 
 def _tool_definitions() -> List[Dict[str, Any]]:
+    # 这里定义“这个 MCP server 暴露哪些工具，以及每个工具的输入 schema”。
     return [
         {
             "name": "analyze_java_stacktrace_tool",
@@ -131,6 +134,8 @@ def _tool_definitions() -> List[Dict[str, Any]]:
 
 
 def _format_sse(event: str, data: str) -> str:
+    # SSE 协议是纯文本格式：event: xxx / data: xxx
+    # 多行 data 需要逐行写入 data: 前缀。
     payload = data.replace("\r\n", "\n").replace("\r", "\n")
     lines = payload.split("\n")
     return "".join([f"event: {event}\n", *[f"data: {line}\n" for line in lines], "\n"])
@@ -149,10 +154,12 @@ def _session_endpoint(request: Request, session_id: str) -> str:
 
 
 async def _enqueue_message(session: McpSession, payload: Dict[str, Any]) -> None:
+    # 所有 JSON-RPC 响应最终都会进入 session.queue，再由 SSE 长连接发回前端。
     await session.queue.put(_format_sse("message", json.dumps(payload, ensure_ascii=False)))
 
 
 async def _handle_initialize(session: McpSession, message_id: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    # MCP 客户端建立连接后，第一步通常就是 initialize 握手。
     requested_version = str(params.get("protocolVersion") or PROTOCOL_VERSION)
     session.initialized = True
     return _jsonrpc_result(
@@ -175,6 +182,7 @@ async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str
     tool_name = params.get("name")
     arguments = params.get("arguments") or {}
     try:
+        # 这里就是 MCP server 的“路由层”：根据 tool_name 分发到对应实现。
         if tool_name == "analyze_java_stacktrace_tool":
             stacktrace = str(arguments.get("stacktrace") or "").strip()
             context = str(arguments.get("context") or "").strip()
@@ -202,6 +210,7 @@ async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str
         else:
             return _jsonrpc_error(message_id, -32601, f"Unknown tool: {tool_name}")
     except Exception as exc:
+        # 工具内部异常统一包装成 JSON-RPC error，避免前端只能看到 500。
         return _jsonrpc_error(message_id, -32001, str(exc))
 
     return _jsonrpc_result(
@@ -209,10 +218,12 @@ async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str
         {
             "content": [
                 {
+                    # content 是 MCP 常见的文本输出形式，方便通用客户端直接显示。
                     "type": "text",
                     "text": json.dumps(result, ensure_ascii=False, indent=2),
                 }
             ],
+            # structuredContent 给程序化调用方使用，前端页面也优先显示这一块。
             "structuredContent": result,
             "isError": False,
         },
@@ -220,6 +231,8 @@ async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str
 
 
 async def _process_jsonrpc(session: McpSession, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # 这个函数专门负责“解释客户端发来的 JSON-RPC 请求”。
+    # 它本身不关心 HTTP/SSE，只关心 method / params / id。
     method = payload.get("method")
     message_id = payload.get("id")
     params = payload.get("params") or {}
@@ -230,6 +243,7 @@ async def _process_jsonrpc(session: McpSession, payload: Dict[str, Any]) -> Opti
     if method == "notifications/initialized":
         return None
 
+    # 除了 initialize 以外，其他请求都要求会话已经初始化。
     if not session.initialized:
         return _jsonrpc_error(message_id, -32002, "Session not initialized")
 
@@ -260,11 +274,13 @@ async def mcp_java_root_redirect_slash() -> RedirectResponse:
 
 @router.get("/mcp/java/sse", name="mcp_java_sse", include_in_schema=False)
 async def mcp_java_sse(request: Request) -> StreamingResponse:
+    # 新建一个会话，并把它挂到内存字典里。
     session = McpSession(session_id=str(uuid.uuid4()))
     SESSIONS[session.session_id] = session
 
     async def event_stream():
         try:
+            # 连接建立后先告诉客户端：后续 JSON-RPC 要往哪个 /messages 端点发。
             endpoint_event = _format_sse("endpoint", _session_endpoint(request, session.session_id))
             yield endpoint_event
             while True:
@@ -274,8 +290,10 @@ async def mcp_java_sse(request: Request) -> StreamingResponse:
                     message = await asyncio.wait_for(session.queue.get(), timeout=15)
                     yield message
                 except asyncio.TimeoutError:
+                    # keep-alive 避免某些代理或浏览器把空闲 SSE 连接断掉。
                     yield ": keep-alive\n\n"
         finally:
+            # SSE 断开时清理会话，避免内存泄漏。
             SESSIONS.pop(session.session_id, None)
 
     return StreamingResponse(
@@ -294,6 +312,7 @@ async def mcp_java_messages(
     request: Request,
     session_id: str = Query(..., description="MCP SSE session id"),
 ) -> Dict[str, Any]:
+    # 客户端通过 session_id 告诉服务端：这条 JSON-RPC 消息属于哪个 SSE 会话。
     session = SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Unknown or expired MCP session")

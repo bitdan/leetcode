@@ -21,5 +21,5 @@ _skill_stacktrace = _load_skill_stacktrace_module()
 
 
 def analyze_java_stacktrace(stacktrace: str, context: str = "") -> Dict[str, object]:
-    """Analyze a Java stack trace and return root cause, evidence, and likely fixes."""
+    """Analyze a Java stack trace through the java-stacktrace-analyzer skill entrypoint."""
     return _skill_stacktrace.analyze_stacktrace(stacktrace=stacktrace, context=context)

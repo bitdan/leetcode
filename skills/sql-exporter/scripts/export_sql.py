@@ -3,13 +3,11 @@ import sys
 from typing import Any, Dict, Optional
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-PY_ROOT = PROJECT_ROOT / "py"
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.append(str(SCRIPT_DIR))
 
-if str(PY_ROOT) not in sys.path:
-    sys.path.append(str(PY_ROOT))
-
-from mcp_server.sql_exporter_core import run_sql_export
+from sql_exporter_core import run_sql_export
 
 
 def export_sql(

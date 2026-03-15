@@ -31,7 +31,7 @@ def run_sql_export(
     db_path: str = "",
     dsn: str = "",
 ) -> Dict[str, Any]:
-    """Execute a read-only SQL query and export the result set."""
+    """Execute a read-only SQL query through the sql-exporter skill entrypoint."""
     return _skill_sql_exporter.export_sql(
         db_kind=db_kind,
         sql=sql,

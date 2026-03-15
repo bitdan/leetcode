@@ -1,7 +1,15 @@
 import json
 import os
 import re
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PY_ROOT = PROJECT_ROOT / "py"
+if str(PY_ROOT) not in sys.path:
+    sys.path.append(str(PY_ROOT))
+
 
 from config.config import OPENAI_API_BASE, OPENAI_API_KEY
 from openai import OpenAI

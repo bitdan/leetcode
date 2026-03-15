@@ -3,13 +3,11 @@ import sys
 from typing import Any, Dict
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-PY_ROOT = PROJECT_ROOT / "py"
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.append(str(SCRIPT_DIR))
 
-if str(PY_ROOT) not in sys.path:
-    sys.path.append(str(PY_ROOT))
-
-from sql_generator.service import generate_sql_payload
+from sql_generator_core import generate_sql_payload
 
 
 def generate_sql(question: str, account: str = "") -> Dict[str, Any]:

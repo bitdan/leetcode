@@ -58,3 +58,7 @@ Structure the answer in this order:
 - Read [references/sql-safety-rules.md](references/sql-safety-rules.md) before returning SQL.
 - Read [references/amazon-order-schema-example.md](references/amazon-order-schema-example.md) for a concrete two-table
   example when the user needs a sample schema format.
+
+## Scripts
+
+- Use scripts/generate_sql.py as the local execution entrypoint when code needs to invoke this skill programmatically.

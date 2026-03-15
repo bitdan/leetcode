@@ -66,3 +66,7 @@ Structure the answer in this order:
   usually mean.
 - Read [references/spring-build-failures.md](references/spring-build-failures.md) for Spring Boot startup, bean
   creation, Maven, and Gradle failure patterns.
+
+## Scripts
+
+- Use scripts/analyze_stacktrace.py as the local execution entrypoint when code needs to invoke this skill programmatically.

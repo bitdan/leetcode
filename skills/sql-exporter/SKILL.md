@@ -68,3 +68,7 @@ Structure the answer in this order:
 ## References
 
 - Read [references/sql-safety-rules.md](references/sql-safety-rules.md) before executing any query.
+
+## Scripts
+
+- Use scripts/export_sql.py as the local execution entrypoint when code needs to invoke this skill programmatically.

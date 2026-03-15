@@ -53,3 +53,28 @@ For PRs:
 
 The parent POM defines `dev` and `local` profiles. Use them for environment-specific overrides when needed (e.g.,
 `mvn -Pdev test`).
+
+## Skill Routing
+
+Use the local skills under `skills/` when the request clearly matches one of the workflows below. Prefer the most
+specific skill that fits the task. If the user explicitly names a skill, use that skill.
+
+- `nl-to-sql-generator`
+  Use for natural language plus schema input when the task is to generate read-only SQL only. Do not execute SQL in
+  this skill.
+
+- `sql-exporter`
+  Use for an existing SQL statement plus database connection details when the task is to validate, execute, or export
+  query results. Do not invent SQL from a business question in this skill.
+
+- `java-stacktrace-analyzer`
+  Use for Java, Spring Boot, Maven, Gradle, JDBC, or test stack traces when the task is to identify the root cause and
+  propose fixes.
+
+## Skill Usage Notes
+
+- Ask for missing schema details before using `nl-to-sql-generator`.
+- Ask for missing SQL or connection details before using `sql-exporter`.
+- For Java error analysis, prioritize the deepest actionable `Caused by` chain instead of top-level wrapper exceptions.
+- Keep skill responsibilities separate. Do not let `sql-exporter` generate SQL, and do not let
+  `java-stacktrace-analyzer` modify code unless the user asks for code changes after the diagnosis.

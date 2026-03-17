@@ -5,6 +5,7 @@ on:
     paths:
       - "py/**"
       - "skills/**"
+      - ".github/workflows/deploy.yml.yml"
   workflow_dispatch:       # 支持手动触发
 
 jobs:

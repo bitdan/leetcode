@@ -1,0 +1,36 @@
+﻿CidrBlock,Protocol,Port,Action,FirewallRuleDescription
+0.0.0.0/0,TCP,9999,允许,springboot
+0.0.0.0/0,TCP,5432,允许,pgsql
+0.0.0.0/0,TCP,18682,允许,1panel
+::/0,ICMPv6,ALL,允许,通过Ping测试IPv6网络连通性 (放通ALL ICMPv6)
+::/0,TCP,443,允许,Web服务HTTPS (443)，如 Apache、Nginx
+::/0,UDP,3389,允许,Windows远程桌面登录优化
+::/0,TCP,3389,允许,Windows远程桌面登录
+::/0,TCP,22,允许,Linux SSH登录
+::/0,TCP,80,允许,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,TCP,8000,允许,
+0.0.0.0/0,TCP,6379,允许,redis
+0.0.0.0/0,UDP,111,允许,nfs
+0.0.0.0/0,TCP,"111,2049",允许,nfs
+0.0.0.0/0,UDP,53,允许,
+0.0.0.0/0,TCP,3306,允许,MySQL服务 (3306)
+0.0.0.0/0,TCP,"8123,9000",允许,clickhouse
+0.0.0.0/0,TCP,"2379,2380",允许,etcd
+0.0.0.0/0,TCP,"10909,10911,10912,19876,9876",允许,RocketMq
+0.0.0.0/0,TCP,11777,允许,1panel
+0.0.0.0/0,UDP,8472,允许,
+0.0.0.0/0,TCP,30000-32767,允许,nodepod
+0.0.0.0/0,ICMP,ALL,允许,ping
+0.0.0.0/0,TCP,53,允许,dns
+0.0.0.0/0,TCP,8472,允许,Overlay 
+0.0.0.0/0,TCP,10257,允许,kube-controller-manager
+0.0.0.0/0,TCP,10259,允许,kube-scheduler
+0.0.0.0/0,TCP,2379-2380,允许,etcd server client API
+0.0.0.0/0,TCP,10250,允许,Kubelet API
+0.0.0.0/0,TCP,6443,允许,kubectl-conf
+0.0.0.0/0,TCP,9100,允许,node_exporter
+0.0.0.0/0,TCP,822,允许,ssh
+0.0.0.0/0,TCP,9090,允许,Kubernetes-dashboard 
+0.0.0.0/0,TCP,80,允许,Web服务HTTP (80)，如 Apache、Nginx
+0.0.0.0/0,TCP,443,允许,Web服务HTTPS (443)，如 Apache、Nginx
+0.0.0.0/0,TCP,22,允许,Linux SSH登录

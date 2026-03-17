@@ -51,7 +51,7 @@ jobs:
           port: ${{ secrets.port }}
           key: ${{ secrets.key }}
           script: |
-            mkdir -p /docker/linger-module/module
+            mkdir -p /docker/linger-module
 
       - name: Upload deployment files
         uses: appleboy/scp-action@v1.0.0
@@ -62,6 +62,7 @@ jobs:
           key: ${{ secrets.key }}
           source: "module/build_timestamp.txt,module/docker-compose.yml"
           target: "/docker/linger-module/"
+          strip_components: 1
 
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.2.2
@@ -72,7 +73,7 @@ jobs:
           key: ${{ secrets.key }}
           script: |
             cd /docker/linger-module/
-            TIMESTAMP=$(cat /docker/linger-module/module/build_timestamp.txt)
+            TIMESTAMP=$(cat /docker/linger-module/build_timestamp.txt)
             sed -i "s|\(image: biasoo/linger-module:\).*|\1$TIMESTAMP|" docker-compose.yml
             docker compose up -d
             echo "✅ 部署完成"

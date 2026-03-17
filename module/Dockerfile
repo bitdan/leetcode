@@ -5,6 +5,7 @@ WORKDIR /build
 ARG APP_PROFILE=dev
 
 COPY pom.xml ./pom.xml
+COPY leetcode-editor/pom.xml ./leetcode-editor/pom.xml
 COPY module/pom.xml ./module/pom.xml
 COPY module/src ./module/src
 

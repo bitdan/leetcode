@@ -1,4 +1,4 @@
-name: Deploy API
+name: Deploy LangGraph API
 
 on:
   push:
@@ -48,18 +48,30 @@ jobs:
           docker push biasoo/langgraph-api:latest
           echo "镜像已推送到 Docker Hub: https://hub.docker.com/repository/docker/biasoo/langgraph-api"
 
-      # 6. 上传构建时间戳文件到服务器
-      - name: Upload timestamp file
+      # 6. 确保服务器目录存在
+      - name: Ensure remote directory
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          script: |
+            mkdir -p /docker/langgraph-api/
+
+      # 7. 上传部署文件到服务器
+      - name: Upload deployment files
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.host }}
           username: ${{ secrets.username }}
           port: ${{ secrets.port }}
           key: ${{ secrets.key }}
-          source: "py/build_timestamp.txt"
+          source: "py/build_timestamp.txt,py/docker-compose.yml"
           target: "/docker/langgraph-api/"
+          strip_components: 1
 
-      # 7. 部署到服务器
+      # 8. 部署到服务器
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -69,7 +81,7 @@ jobs:
           key: ${{ secrets.key }}
           script: |
             cd /docker/langgraph-api/
-            TIMESTAMP=$(cat /docker/langgraph-api/py/build_timestamp.txt)  
+            TIMESTAMP=$(cat /docker/langgraph-api/build_timestamp.txt)
             sed -i "s|\(image: biasoo/langgraph-api:\).*|\1$TIMESTAMP|" docker-compose.yml
             docker compose up -d 
             echo "✅ 部署完成"

@@ -1,0 +1,9 @@
+services:
+  linger-module:
+    image: biasoo/linger-module:latest
+    container_name: linger-module
+    ports:
+      - "9999:9999"
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

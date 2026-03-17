@@ -1,0 +1,79 @@
+name: Deploy Module
+
+on:
+  push:
+    paths:
+      - "module/**"
+      - "pom.xml"
+      - ".github/workflows/module-deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: REPO
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker Login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        run: |
+          TIMESTAMP=$(TZ="Asia/Shanghai" date +%Y%m%d-%H%M%S)
+          IMAGE_TAG="biasoo/linger-module:$TIMESTAMP"
+          LATEST_TAG="biasoo/linger-module:latest"
+          echo "Building image $IMAGE_TAG"
+          docker build -f module/Dockerfile --build-arg APP_PROFILE=local -t $IMAGE_TAG -t $LATEST_TAG .
+
+          echo $TIMESTAMP > module/build_timestamp.txt
+
+      - name: Push Docker image
+        run: |
+          TIMESTAMP=$(cat module/build_timestamp.txt)
+          docker push biasoo/linger-module:$TIMESTAMP
+          docker push biasoo/linger-module:latest
+          echo "镜像已推送到 Docker Hub: https://hub.docker.com/repository/docker/biasoo/linger-module"
+
+      - name: Ensure remote directory
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          script: |
+            mkdir -p /docker/linger-module/module
+
+      - name: Upload deployment files
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          source: "module/build_timestamp.txt,module/docker-compose.yml"
+          target: "/docker/linger-module/"
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.host }}
+          username: ${{ secrets.username }}
+          port: ${{ secrets.port }}
+          key: ${{ secrets.key }}
+          script: |
+            cd /docker/linger-module/
+            TIMESTAMP=$(cat /docker/linger-module/module/build_timestamp.txt)
+            sed -i "s|\(image: biasoo/linger-module:\).*|\1$TIMESTAMP|" docker-compose.yml
+            docker compose up -d
+            echo "✅ 部署完成"
+            echo "查看日志: docker compose logs -f"

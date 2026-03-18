@@ -21,5 +21,4 @@ _skill_workflow = _load_skill_workflow_module()
 
 
 def execute_langgraph_workflow(topic: str) -> Dict[str, Any]:
-    """Run the general workflow through the skill entrypoint."""
     return _skill_workflow.execute_workflow(topic=topic)

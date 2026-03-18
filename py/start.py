@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-"""
-Tool Hub API 启动脚本
-"""
+"""Tool Hub API startup script."""
+
 import os
-import sys
+
 import uvicorn
-from pathlib import Path
 
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent
-sys.path.append(str(project_root))
 
-def main():
-    """启动API服务器"""
-    # 设置环境变量
+def main() -> None:
     os.environ.setdefault("LOG_LEVEL", "INFO")
     reload_enabled = os.getenv("UVICORN_RELOAD", "false").lower() == "true"
-    
-    # 启动服务器
     uvicorn.run(
         "api.main:app",
         host="0.0.0.0",
@@ -26,6 +17,7 @@ def main():
         log_level="info",
         access_log=False,
     )
+
 
 if __name__ == "__main__":
     main()

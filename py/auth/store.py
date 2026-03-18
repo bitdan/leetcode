@@ -131,7 +131,7 @@ class InMemoryUserRepository:
             "admin": UserRecord(
                 user_id="admin_001",
                 username="admin",
-                password_hash=jwt_handler.get_password_hash("admin123"),
+                password_hash=jwt_handler.get_password_hash("123456"),
                 email="admin@example.com",
                 avatar=None,
                 roles=["admin"],

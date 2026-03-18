@@ -22,7 +22,7 @@ class AuthAndGameApiTest(unittest.TestCase):
             "/api/v1/login",
             json={
                 "username": "admin",
-                "password": "admin123",
+                "password": "123456",
                 "code": "TEST",
                 "uuid": payload["uuid"],
             },

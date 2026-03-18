@@ -9,8 +9,9 @@ def normalize_password(password: str) -> bytes:
     encoded = password.encode("utf-8")
     return encoded[:72] if len(encoded) > 72 else encoded
 
-# 生成admin123的哈希
-password = "admin123"
+
+# 生成123456的哈希
+password = "123456"
 password_hash = bcrypt.hashpw(normalize_password(password), bcrypt.gensalt()).decode("utf-8")
 
 print(f"密码: {password}")

@@ -85,15 +85,23 @@ class UserService:
         token_data = self.jwt_handler.verify_token(token)
         if not token_data or not token_data.user_id:
             return None
-        if not self.session_store.check_token_valid(token_data.user_id):
-            return None
-        user_info_dict = self.session_store.get_user_info(token_data.user_id)
-        if not user_info_dict:
-            return None
-        self.session_store.extend_user_session(token_data.user_id)
-        if hasattr(UserInfo, "model_validate"):
-            return UserInfo.model_validate(user_info_dict)
-        return UserInfo.parse_obj(user_info_dict)
+
+        try:
+            if not self.session_store.check_token_valid(token_data.user_id):
+                return None
+
+            user_info_dict = self.session_store.get_user_info(token_data.user_id)
+            if user_info_dict:
+                self.session_store.extend_user_session(token_data.user_id)
+                if hasattr(UserInfo, "model_validate"):
+                    return UserInfo.model_validate(user_info_dict)
+                return UserInfo.parse_obj(user_info_dict)
+        except Exception as exc:
+            logger.warning("Session store lookup failed, falling back to JWT-only auth: %s", exc)
+
+        # Fallback for degraded session storage when token presence already passed
+        # or the store itself errored during lookup.
+        return self.get_user_info(token_data.user_id)
 
 
 _settings = get_settings()

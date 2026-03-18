@@ -26,7 +26,7 @@ async def test_complete_flow():
         print("2. 用户登录...")
         login_data = {
             "username": "admin",
-            "password": "admin123",
+            "password": "123456",
             "code": "TEST",
             "uuid": captcha_uuid,
         }

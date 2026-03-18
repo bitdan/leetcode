@@ -6,11 +6,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
-
 from mcp_server.java_stacktrace import analyze_java_stacktrace
+from mcp_server.leetcode_coach import run_leetcode_coach
 from mcp_server.sql_exporter import run_sql_export
 from mcp_server.sql_generator import generate_nl_sql
-
 
 SERVER_INFO = {
     "name": "tool-hub-mcp",
@@ -52,6 +51,57 @@ def _tool_definitions() -> List[Dict[str, Any]]:
                     },
                 },
                 "required": ["stacktrace"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "leetcode_coach_tool",
+            "description": "Coach a user through a LeetCode problem using the problem statement and submitted code, returning hints, complexity analysis, review findings, and next-step advice.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "LeetCode problem title.",
+                    },
+                    "problem_statement": {
+                        "type": "string",
+                        "description": "Full problem statement or the essential problem description.",
+                    },
+                    "constraints": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of constraints.",
+                        "default": [],
+                    },
+                    "examples": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of examples.",
+                        "default": [],
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": "User submitted code to review.",
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Programming language of the submitted code.",
+                        "default": "java",
+                    },
+                    "user_question": {
+                        "type": "string",
+                        "description": "Optional user question or difficulty point.",
+                        "default": "",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["hint", "review", "teach", "mock"],
+                        "description": "Coaching mode.",
+                        "default": "hint",
+                    },
+                },
+                "required": ["title", "problem_statement", "code"],
                 "additionalProperties": False,
             },
         },
@@ -189,6 +239,31 @@ async def _handle_tool_call(message_id: Any, params: Dict[str, Any]) -> Dict[str
             if not stacktrace:
                 return _jsonrpc_error(message_id, -32602, "stacktrace is required")
             result = analyze_java_stacktrace(stacktrace=stacktrace, context=context)
+        elif tool_name == "leetcode_coach_tool":
+            title = str(arguments.get("title") or "").strip()
+            problem_statement = str(arguments.get("problem_statement") or "").strip()
+            code = str(arguments.get("code") or "")
+            constraints = arguments.get("constraints") if isinstance(arguments.get("constraints"), list) else []
+            examples = arguments.get("examples") if isinstance(arguments.get("examples"), list) else []
+            language = str(arguments.get("language") or "java").strip() or "java"
+            user_question = str(arguments.get("user_question") or "").strip()
+            mode = str(arguments.get("mode") or "hint").strip() or "hint"
+            if not title:
+                return _jsonrpc_error(message_id, -32602, "title is required")
+            if not problem_statement:
+                return _jsonrpc_error(message_id, -32602, "problem_statement is required")
+            if not code.strip():
+                return _jsonrpc_error(message_id, -32602, "code is required")
+            result = run_leetcode_coach(
+                title=title,
+                problem_statement=problem_statement,
+                code=code,
+                constraints=[str(item) for item in constraints],
+                examples=[str(item) for item in examples],
+                language=language,
+                user_question=user_question,
+                mode=mode,
+            )
         elif tool_name == "sql_exporter_tool":
             result = run_sql_export(
                 db_kind=str(arguments.get("db_kind") or "").strip(),

@@ -43,6 +43,9 @@ class McpServerTest(unittest.TestCase):
                 },
             )
             self.assertEqual("analyze_java_stacktrace_tool", tools_payload["result"]["tools"][0]["name"])
+            self.assertTrue(
+                any(tool["name"] == "leetcode_coach_tool" for tool in tools_payload["result"]["tools"])
+            )
 
             call_payload = await _process_jsonrpc(
                 session,
@@ -139,6 +142,50 @@ class McpServerTest(unittest.TestCase):
             structured = payload["result"]["structuredContent"]
             self.assertIn("SELECT seller_sku", structured["sql"])
             self.assertEqual(["seller_sku", "qty_ordered"], structured["result_columns"])
+
+        asyncio.run(scenario())
+
+    def test_leetcode_coach_tool(self):
+        async def scenario():
+            session = McpSession(session_id="leetcode-session", initialized=True)
+            with patch("mcp_server.server.run_leetcode_coach") as mock_coach:
+                mock_coach.return_value = {
+                    "understanding": "题目要求在数组中找到满足目标和的两个下标。",
+                    "key_observations": ["先确认暴力解，再思考哈希表优化。"],
+                    "hint": "考虑边遍历边记录已经见过的数字。",
+                    "complexity_analysis": "暴力法 O(n^2)，哈希表法 O(n)。",
+                    "review_findings": ["当前代码只有外层循环，还没有查找补数。"],
+                    "next_step": "加入 target - nums[i] 的查找。",
+                    "similar_patterns": ["hash map counting"],
+                    "mode": "hint",
+                    "source": "heuristic",
+                }
+                payload = await _process_jsonrpc(
+                    session,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 21,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "leetcode_coach_tool",
+                            "arguments": {
+                                "title": "Two Sum",
+                                "problem_statement": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
+                                "constraints": ["2 <= nums.length <= 10^4"],
+                                "examples": ["Input: nums = [2,7,11,15], target = 9 Output: [0,1]"],
+                                "code": "class Solution { public int[] twoSum(int[] nums, int target) { for (int i = 0; i < nums.length; i++) { } } }",
+                                "language": "java",
+                                "user_question": "怎么优化",
+                                "mode": "hint",
+                            },
+                        },
+                    },
+                )
+            self.assertFalse(payload["result"]["isError"])
+            structured = payload["result"]["structuredContent"]
+            self.assertEqual("hint", structured["mode"])
+            self.assertIn("complexity_analysis", structured)
+            self.assertTrue(structured["review_findings"])
 
         asyncio.run(scenario())
 

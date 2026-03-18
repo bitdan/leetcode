@@ -3,8 +3,18 @@ import random
 import string
 import uuid
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_FONT = PROJECT_ROOT / "assets" / "fonts" / "NotoSans-Bold.ttf"
+
+
+def _load_captcha_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    if not PROJECT_FONT.exists():
+        raise FileNotFoundError(f"Captcha font not found: {PROJECT_FONT}")
+    return ImageFont.truetype(str(PROJECT_FONT), size)
 
 
 def generate_captcha_payload() -> dict:
@@ -14,10 +24,7 @@ def generate_captcha_payload() -> dict:
     image = Image.new("RGB", (width, height), color="white")
     draw = ImageDraw.Draw(image)
 
-    try:
-        font = ImageFont.truetype("arial.ttf", 24)
-    except Exception:
-        font = ImageFont.load_default()
+    font = _load_captcha_font(24)
 
     bbox = draw.textbbox((0, 0), code, font=font)
     text_width = bbox[2] - bbox[0]

@@ -4,11 +4,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from starlette.responses import Response
 
 project_root = Path(__file__).parent.parent
@@ -17,8 +16,6 @@ sys.path.append(str(project_root))
 from agent_chat.service import AgentChatRequest, AgentChatResponse, AgentChatService
 from auth.routes import router as auth_router
 from game.routes import router as game_router
-from skill_adapters.leetcode_coach import run_leetcode_coach
-from workflow_adapter.langgraph_workflow import execute_langgraph_workflow
 
 try:
     from mcp_server.server import router as mcp_java_router
@@ -165,78 +162,9 @@ if mcp_java_router is not None:
 else:
     logger.warning("MCP server dependency not available; skipping /mcp/java routes")
 
-class ChatRequest(BaseModel):
-    topic: str
-
-
-class TraceStep(BaseModel):
-    node: str
-    input_summary: str
-    output_summary: str
-    decision: str
-    latency_ms: int
-
-
-class ChatResponse(BaseModel):
-    topic: str
-    draft: str
-    corrections: List[str]
-    attempts: int
-    trace: List[TraceStep]
-
-
-class LeetCodeCoachRequest(BaseModel):
-    title: str
-    problem_statement: str
-    constraints: List[str] = []
-    examples: List[str] = []
-    code: str
-    language: str = "java"
-    user_question: str = ""
-    mode: str = "hint"
-
-
-class LeetCodeCoachResponse(BaseModel):
-    understanding: str
-    key_observations: List[str]
-    hint: str
-    complexity_analysis: str
-    review_findings: List[str]
-    next_step: str
-    similar_patterns: List[str]
-    mode: str
-    source: str
-
-
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
-
-
-@app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
-    try:
-        # 运行工作流（内部包含逐步日志输出）
-        final_state = execute_langgraph_workflow(req.topic)
-        return ChatResponse(
-            topic=req.topic,
-            draft=final_state.get("draft", ""),
-            corrections=final_state.get("corrections", []),
-            attempts=final_state.get("attempts", 0),
-            trace=final_state.get("trace", []),
-        )
-    except Exception as e:
-        logger.exception("/api/v1/chat 调用失败")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/leetcode/coach", response_model=LeetCodeCoachResponse)
-async def leetcode_coach(req: LeetCodeCoachRequest) -> LeetCodeCoachResponse:
-    try:
-        return LeetCodeCoachResponse(**run_leetcode_coach(req.model_dump()))
-    except Exception as e:
-        logger.exception("/api/v1/leetcode/coach 调用失败")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/agent/chat", response_model=AgentChatResponse)

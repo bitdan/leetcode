@@ -50,39 +50,39 @@ public class ReverseNodesInKGroup {
     public static void main(String[] args) {
         Solution solution = new ReverseNodesInKGroup().new Solution();
         ListNode head = ListNode.of(1, 2, 3, 4, 5);
-        log.info("{}", solution.reverseKGroup(head, 2));
+        log.info("{}", solution.reverseKGroup(head, 3));
 
     }
     //leetcode submit region begin(Prohibit modification and deletion)
 
     class Solution {
         public ListNode reverseKGroup(ListNode head, int k) {
-            ListNode dummy = new ListNode(0);
+            ListNode dummy = new ListNode(-1);
             dummy.next = head;
-            ListNode cur = dummy;
+            ListNode end = dummy;
+            ListNode pre = dummy;
             while (true) {
-                ListNode end = cur;
                 for (int i = 0; i < k && end != null; i++) {
                     end = end.next;
                 }
                 if (end == null) {
                     break;
                 }
-                ListNode start = cur.next;
+                ListNode start = pre.next;
                 ListNode next = end.next;
-                reverse(start, end);
-
-                cur.next = end;
+                end.next = null;
+                pre.next = reverse(start);
                 start.next = next;
-                cur = start;
+                pre = start;
+                end = pre;
             }
             return dummy.next;
         }
 
-        private ListNode reverse(ListNode start, ListNode end) {
-            ListNode pre = end.next;
-            ListNode cur = start;
-            while (pre != end) {
+        private ListNode reverse(ListNode head) {
+            ListNode pre = null;
+            ListNode cur = head;
+            while (cur != null) {
                 ListNode next = cur.next;
                 cur.next = pre;
                 pre = cur;

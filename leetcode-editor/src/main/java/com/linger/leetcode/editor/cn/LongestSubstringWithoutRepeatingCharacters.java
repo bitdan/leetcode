@@ -49,7 +49,7 @@ import java.util.HashSet;
 public class LongestSubstringWithoutRepeatingCharacters {
     public static void main(String[] args) {
         Solution solution = new LongestSubstringWithoutRepeatingCharacters().new Solution();
-        log.info("{}", solution.lengthOfLongestSubstring("abba"));
+        log.info("{}", solution.lengthOfLongestSubstring("abcabcbb"));
 
     }
 
@@ -57,16 +57,20 @@ public class LongestSubstringWithoutRepeatingCharacters {
     class Solution {
         public int lengthOfLongestSubstring(String s) {
             HashSet<Character> characters = new HashSet<>();
-            int right = 0, maxLen = 0;
-            for (int left = 0; left < s.length(); left++) {
-                while (right < s.length() && !characters.contains(s.charAt(right))) {
+            int left = 0;
+            int right = 0;
+            int max = 0;
+            while (right < s.length()) {
+                if ((!characters.contains(s.charAt(right)))){
                     characters.add(s.charAt(right));
                     right++;
+                }else {
+                    characters.remove(s.charAt(left));
+                    left++;
                 }
-                maxLen = Math.max(maxLen, right - left);
-                characters.remove(s.charAt(left));
+                max = Math.max(max, right - left);
             }
-            return maxLen;
+            return max;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

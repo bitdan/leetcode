@@ -5,14 +5,16 @@ import time
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
-import config
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 
-# 添加项目根目录到 Python 路径（便于本地直接运行）
-project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PY_ROOT = REPO_ROOT / "py"
+if str(PY_ROOT) not in sys.path:
+    sys.path.append(str(PY_ROOT))
+
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +32,6 @@ llm = ChatOpenAI(
 
 
 class TextState(TypedDict):
-    """LangGraph 状态对象（每个节点都读写这个结构）"""
-
     topic: str
     draft: str
     corrections: Annotated[list[str], operator.add]
@@ -55,7 +55,6 @@ def _short_text(text: str, limit: int = 80) -> str:
 
 
 def generate_draft(state: TextState) -> dict:
-    """节点1：按 topic 生成初稿"""
     start = time.perf_counter()
     prompt = PromptTemplate.from_template(
         "请围绕主题'{topic}'撰写一篇简洁的文章。要求：\n"
@@ -83,7 +82,6 @@ def generate_draft(state: TextState) -> dict:
 
 
 def critique_draft(state: TextState) -> dict:
-    """节点2：评估当前草稿，并决定继续 refine 还是结束"""
     start = time.perf_counter()
     attempts = state.get("attempts", 0) + 1
 
@@ -123,7 +121,6 @@ def critique_draft(state: TextState) -> dict:
 
 
 def refine_draft(state: TextState) -> dict:
-    """节点3：基于最新 feedback 改写草稿"""
     start = time.perf_counter()
     feedback = state["corrections"][-1] if state.get("corrections") else "请优化逻辑与表达"
     prompt = PromptTemplate.from_template(
@@ -149,7 +146,6 @@ def refine_draft(state: TextState) -> dict:
 
 
 def should_continue(state: TextState):
-    """条件边：根据 critique 节点写入的 next_action 决定流向"""
     return END if state.get("next_action") == "end" else "refine"
 
 
@@ -167,10 +163,6 @@ graph = workflow.compile()
 
 
 def run_workflow(topic: str) -> TextState:
-    """
-    运行 LangGraph 工作流并返回最终状态。
-    这版用于学习：会返回 trace，便于理解每一步是如何流转的。
-    """
     logger.info("开始运行工作流, topic=%s", topic)
     init_state: TextState = {
         "topic": topic,
@@ -186,7 +178,3 @@ def run_workflow(topic: str) -> TextState:
     for step in final_state.get("trace", []):
         logger.info("[trace] %s", step)
     return final_state
-
-
-if __name__ == "__main__":
-    run_workflow("数据太多怎么办")

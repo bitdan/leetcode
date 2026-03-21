@@ -1,0 +1,60 @@
+import logging
+from dataclasses import dataclass
+
+from agent_chat.service import AgentChatService
+from auth.security import JWTHandler
+from auth.service import UserService
+from auth.store import InMemoryUserRepository, MemorySessionStore, RedisSessionStore
+from core.settings import Settings
+from game.service import GameService
+from mcp_server.registry import create_default_tool_registry
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Container:
+    settings: Settings
+    jwt_handler: JWTHandler
+    user_service: UserService
+    game_service: GameService
+    agent_chat_service: AgentChatService
+    mcp_tool_registry: dict
+
+
+def build_container(settings: Settings) -> Container:
+    jwt_handler = JWTHandler(
+        secret_key=settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+        expiration_hours=settings.jwt_expiration_hours,
+    )
+
+    session_store = MemorySessionStore()
+    if settings.use_redis_sessions:
+        try:
+            session_store = RedisSessionStore(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                database=settings.redis.database,
+                password=settings.redis.password,
+                decode_responses=settings.redis.decode_responses,
+                expiration_hours=settings.jwt_expiration_hours,
+            )
+        except Exception:
+            logger.warning("Redis unavailable. Falling back to in-memory session store.", exc_info=True)
+
+    user_repository = InMemoryUserRepository(jwt_handler=jwt_handler)
+    user_service = UserService(
+        user_repository=user_repository,
+        session_store=session_store,
+        jwt_handler=jwt_handler,
+        session_ttl_hours=settings.jwt_expiration_hours,
+    )
+    return Container(
+        settings=settings,
+        jwt_handler=jwt_handler,
+        user_service=user_service,
+        game_service=GameService(),
+        agent_chat_service=AgentChatService(),
+        mcp_tool_registry=create_default_tool_registry(),
+    )

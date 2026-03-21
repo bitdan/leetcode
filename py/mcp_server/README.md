@@ -28,6 +28,9 @@ This directory is the MCP adapter layer for local skills. Keep it thin.
 - `sql_generator.py`
   Loads `skills/nl-to-sql-generator/scripts/generate_sql.py`
 
+- `leetcode_coach.py`
+  Loads `skills/leetcode-coach/scripts/run_coach.py`
+
 ## Call Flow
 
 The request path is:

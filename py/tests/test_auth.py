@@ -2,10 +2,10 @@
 """
 认证功能测试脚本
 """
-import requests
-import json
 import sys
 from pathlib import Path
+
+import requests
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).resolve().parents[1]
@@ -71,7 +71,7 @@ def test_login():
     
     login_data = {
         "username": "admin",  # 使用默认管理员账号
-        "password": "admin123",
+        "password": "123456",
         "code": "TEST",  # 测试用验证码
         "uuid": captcha_data['uuid']
     }

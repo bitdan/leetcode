@@ -1,24 +1,10 @@
-import os
-from dotenv import load_dotenv
+from core.settings import get_settings, legacy_redis_config
 
-# 加载环境变量
-load_dotenv()
+_settings = get_settings()
 
-# OpenAI API配置（从环境变量读取）
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
-
-# JWT配置（从环境变量读取）
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-env")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "6"))
-
-# Redis配置
-REDIS_CONFIG = {
-    "host": os.getenv("REDIS_HOST", "43.156.83.246"),
-    "port": int(os.getenv("REDIS_PORT", "6379")),
-    "database": int(os.getenv("REDIS_DATABASE", "14")),
-    "password": os.getenv("REDIS_PASSWORD", "dudu0.0@"),
-    "decode_responses": True
-}
-
+OPENAI_API_KEY = _settings.openai_api_key
+OPENAI_API_BASE = _settings.openai_api_base
+JWT_SECRET_KEY = _settings.jwt_secret_key
+JWT_ALGORITHM = _settings.jwt_algorithm
+JWT_EXPIRATION_HOURS = _settings.jwt_expiration_hours
+REDIS_CONFIG = legacy_redis_config()

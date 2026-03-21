@@ -60,7 +60,7 @@ import java.util.List;
 public class ThreeSum {
     public static void main(String[] args) {
         Solution solution = new ThreeSum().new Solution();
-        int[] nums = new int[]{-1, 0, 1, 2, -1, -4};
+        int[] nums = new int[]{-2, 0, 0, 2, 2};
         List<List<Integer>> lists = solution.threeSum(nums);
         log.info("{}", lists);
 

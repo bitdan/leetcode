@@ -53,8 +53,8 @@ public class MergeTwoSortedLists {
 
     class Solution {
         public ListNode mergeTwoLists(ListNode list1, ListNode list2) {
-            ListNode listNode = new ListNode(-1);
-            ListNode cur = listNode;
+            ListNode dummy = new ListNode(-1);
+            ListNode cur = dummy;
             while (list1 != null && list2 != null) {
                 if (list1.val < list2.val) {
                     cur.next = list1;
@@ -65,10 +65,8 @@ public class MergeTwoSortedLists {
                 }
                 cur = cur.next;
             }
-            cur.next = list1 != null ? list1 : list2;
-
-
-            return listNode.next;
+            cur.next = list1 == null ? list2 : list1;
+            return dummy.next;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

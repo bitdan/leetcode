@@ -52,11 +52,10 @@ public class MaximumProductSubarray {
             int min = nums[0];
             int res = nums[0];
             for (int i = 1; i < nums.length; i++) {
-                int tmp = nums[i];
-                int tmpMax = Math.max(tmp * max, Math.max(tmp * min, tmp));
-                int tmpMin = Math.min(tmp * max, Math.min(tmp * min, tmp));
-                max = tmpMax;
-                min = tmpMin;
+                int tmin = nums[i] * min;
+                int tmax = nums[i] * max;
+                max = Math.max(Math.max(tmin, tmax), nums[i]);
+                min = Math.min(Math.min(tmin, tmax), nums[i]);
                 res = Math.max(res, max);
             }
             return res;

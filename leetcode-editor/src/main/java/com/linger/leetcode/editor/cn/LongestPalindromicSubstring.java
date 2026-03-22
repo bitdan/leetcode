@@ -37,35 +37,44 @@ import lombok.extern.slf4j.Slf4j;
 public class LongestPalindromicSubstring {
     public static void main(String[] args) {
         Solution solution = new LongestPalindromicSubstring().new Solution();
-        log.info("{}", solution.longestPalindrome("babad"));
+        log.info("{}", solution.longestPalindrome("babbad"));
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public String longestPalindrome(String s) {
-            if (s == null || s.length() < 2) return s;
-            int start = 0, end = 0;
-
+            int start = 0, sublen = 0;
             for (int i = 0; i < s.length(); i++) {
-                int len1 = expand(s, i, i);     // 奇数回文（以 i 为中心）
-                int len2 = expand(s, i, i + 1); // 偶数回文（以 i 和 i+1 为中心）
-                int len = Math.max(len1, len2);
-
-                if (len > end - start) {
-                    start = i - (len - 1) / 2;
-                    end = i + len / 2;
+                //bab
+                int l = i, r = i;
+                while (l >= 0 && r < s.length() && s.charAt(l) == s.charAt(r)) {
+                    int len = r - l + 1;
+                    if (len > sublen) {
+                        start = l;
+                        sublen = len;
+                    }
+                    l--;
+                    r++;
                 }
+
+                //abba
+                l = i;
+                r = i + 1;
+                while (l >= 0 && r < s.length() && s.charAt(l) == s.charAt(r)) {
+                    int len = r - l + 1;
+                    if (len > sublen) {
+                        start = l;
+                        sublen = len;
+                    }
+                    l--;
+                    r++;
+                }
+
+
             }
-            return s.substring(start, end + 1);
+            return s.substring(start, start + sublen);
         }
 
-        private int expand(String s, int left, int right) {
-            while (left >= 0 && right < s.length() && s.charAt(left) == s.charAt(right)) {
-                left--;
-                right++;
-            }
-            return right - left - 1;
-        }
     }
 //leetcode submit region end(Prohibit modification and deletion)
 

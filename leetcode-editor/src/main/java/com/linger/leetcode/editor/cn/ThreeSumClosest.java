@@ -66,7 +66,7 @@ public class ThreeSumClosest {
                         right--;
                     } else if (sum < target) {
                         left++;
-                    } else {
+                    } else { 
                         return sum;
                     }
                 }

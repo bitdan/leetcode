@@ -63,14 +63,82 @@ package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
 public class LruCache {
+
+    class Node {
+        int key;
+        int value;
+        Node pre;
+        Node next;
+
+        public Node() {
+        }
+
+        public Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private Node head = new Node();
+    private Node tail = new Node();
+    private int capacity;
+    private Map<Integer, Node> map = new HashMap<>();
+
+    public LruCache(int capacity) {
+        this.capacity = capacity;
+        head.next = tail;
+        tail.pre = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node != null) {
+            removeNode(node);
+            addToHdead(node);
+            return node.value;
+        }
+        return -1;
+    }
+
+    private void addToHdead(Node node) {
+        node.pre = head;
+        node.next = head.next;
+        head.next.pre = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.pre.next = node.next;
+        node.next.pre = node.pre;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            removeNode(node);
+            node.value = value;
+            addToHdead(node);
+        } else {
+            Node node1 = new Node(key, value);
+            addToHdead(node1);
+            map.put(key, node1);
+            if (map.size() > capacity) {
+                Node tailPre = tail.pre;
+                removeNode(tailPre);
+                map.remove(tailPre.key);
+            }
+        }
+    }
+
+
     public static void main(String[] args) {
 
-        LRUCache lruCache = new LRUCache(2);
+        LruCache lruCache = new LruCache(2);
         lruCache.put(1, 1); // 缓存是 {1=1}
         lruCache.put(2, 2); // 缓存是 {1=1, 2=2}
         System.out.println(lruCache.get(1)); // 返回 1
@@ -80,30 +148,6 @@ public class LruCache {
         System.out.println(lruCache.get(1)); // 返回 -1
         System.out.println(lruCache.get(3)); // 返回 3
         System.out.println(lruCache.get(4)); // 返回 4
-    }
-
-    //leetcode submit region begin(Prohibit modification and deletion)
-    static class LRUCache extends LinkedHashMap<Integer, Integer> {
-        private final int capacity;
-
-        public LRUCache(int capacity) {
-            super(capacity, 0.75f, true);
-            this.capacity = capacity;
-        }
-
-
-        public int get(int key) {
-            return super.getOrDefault(key, -1);
-        }
-
-        public void put(int key, int value) {
-            super.put(key, value);
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Integer, Integer> eldest) {
-            return size() > capacity;
-        }
     }
 
 }

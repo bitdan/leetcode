@@ -40,6 +40,7 @@ package com.linger.leetcode.editor.cn;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -55,24 +56,28 @@ public class BinaryTreeLevelOrderTraversal {
 
     class Solution {
         public List<List<Integer>> levelOrder(TreeNode root) {
-            List<List<Integer>> res = new ArrayList<>();
+            ArrayList<List<Integer>> list = new ArrayList<>();
             if (root == null) {
-                return res;
+                return list;
             }
-            LinkedList<TreeNode> queue = new LinkedList<>();
-            queue.offer(root);
-            while (!queue.isEmpty()) {
-                int size = queue.size();
-                List<Integer> level = new ArrayList<>();
-                while (size-- > 0) {
-                    TreeNode node = queue.poll();
+            Deque<TreeNode> deque = new LinkedList<>();
+            deque.offer(root);
+            while (!deque.isEmpty()) {
+                int size = deque.size();
+                ArrayList<Integer> level = new ArrayList<>();
+                for (int i = 0; i < size; i++) {
+                    TreeNode node = deque.poll();
                     level.add(node.val);
-                    if (node.left != null) queue.offer(node.left);
-                    if (node.right != null) queue.offer(node.right);
+                    if (node.left != null) {
+                        deque.offer(node.left);
+                    }
+                    if (node.right != null) {
+                        deque.offer(node.right);
+                    }
                 }
-                res.add(level);
+                list.add(level);
             }
-            return res;
+            return list;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

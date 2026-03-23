@@ -40,7 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 public class TrappingRainWater {
     public static void main(String[] args) {
         Solution solution = new TrappingRainWater().new Solution();
-        int trap = solution.trap(new int[]{0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1});
+        int trap = solution.trap2(new int[]{0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1});
         log.info("{}", trap);
 
     }
@@ -70,6 +70,26 @@ public class TrappingRainWater {
                     right--;
                 }
 
+            }
+            return res;
+        }
+
+        public int trap2(int[] height) {
+            int[] leftMax = new int[height.length];
+            leftMax[0] = height[0];
+            for (int i = 1; i < height.length; i++) {
+                leftMax[i] = Math.max(leftMax[i - 1], height[i]);
+            }
+            log.info("{}", leftMax);
+            int[] rightMax = new int[height.length];
+            rightMax[height.length - 1] = height[height.length - 1];
+            for (int i = height.length - 2; i >= 0; i--) {
+                rightMax[i] = Math.max(rightMax[i + 1], height[i]);
+            }
+            log.info("{}", rightMax);
+            int res = 0;
+            for (int i = 0; i < height.length; i++) {
+                res += Math.min(leftMax[i], rightMax[i]) - height[i];
             }
             return res;
         }

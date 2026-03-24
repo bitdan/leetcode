@@ -61,10 +61,10 @@ public class LongestSubstringWithoutRepeatingCharacters {
             int right = 0;
             int max = 0;
             while (right < s.length()) {
-                if ((!characters.contains(s.charAt(right)))){
+                if (!characters.contains(s.charAt(right))) {
                     characters.add(s.charAt(right));
                     right++;
-                }else {
+                } else {
                     characters.remove(s.charAt(left));
                     left++;
                 }

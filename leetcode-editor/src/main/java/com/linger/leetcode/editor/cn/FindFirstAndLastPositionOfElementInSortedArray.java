@@ -47,21 +47,25 @@ public class FindFirstAndLastPositionOfElementInSortedArray {
     public static void main(String[] args) {
         Solution solution = new FindFirstAndLastPositionOfElementInSortedArray().new Solution();
         int[] ints = {5, 7, 7, 8, 8, 10};
-        log.info("{}", solution.searchRange(ints, 8));
+        log.info("{}", solution.searchRange(ints, 6));
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public int[] searchRange(int[] nums, int target) {
-            int left = findLeft(nums, target);
-            int right = findRight(nums, target);
+            int left = search(nums, target);
+            int right = search(nums, target + 1) - 1;
+
+            if (left >= nums.length || nums[left] != target) {
+                return new int[]{-1, -1};
+            }
             return new int[]{left, right};
         }
 
-        private int findLeft(int[] nums, int target) {
+        public int search(int[] nums, int target) {
             int left = 0;
             int right = nums.length - 1;
-            int ans = -1;
+
             while (left <= right) {
                 int mid = left + (right - left) / 2;
                 if (nums[mid] >= target) {
@@ -69,25 +73,8 @@ public class FindFirstAndLastPositionOfElementInSortedArray {
                 } else {
                     left = mid + 1;
                 }
-                if (nums[mid] == target) ans = mid;
             }
-            return ans;
-        }
-
-        private int findRight(int[] nums, int target) {
-            int left = 0;
-            int right = nums.length - 1;
-            int ans = -1;
-            while (left <= right) {
-                int mid = left + (right - left) / 2;
-                if (nums[mid] <= target) {
-                    left = mid + 1;
-                } else {
-                    right = mid - 1;
-                }
-                if (nums[mid] == target) ans = mid;
-            }
-            return ans;
+            return left;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

@@ -67,6 +67,7 @@ package com.linger.leetcode.editor.cn;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayDeque;
+import java.util.Deque;
 
 @Slf4j
 public class ValidParentheses {
@@ -78,7 +79,7 @@ public class ValidParentheses {
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public boolean isValid(String s) {
-            ArrayDeque<Character> stack = new ArrayDeque<>();
+            Deque<Character> stack = new ArrayDeque<>();
             for (char c : s.toCharArray()) {
                 if (c == '(') {
                     stack.push(')');

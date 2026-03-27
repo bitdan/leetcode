@@ -37,7 +37,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 
 @Slf4j
 public class MergeIntervals {
@@ -50,7 +49,7 @@ public class MergeIntervals {
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public int[][] merge(int[][] intervals) {
-            Arrays.sort(intervals, Comparator.comparingInt(a -> a[0]));
+            Arrays.sort(intervals, (a, b) -> a[0] - b[0]);
             ArrayList<int[]> merged = new ArrayList<>();
             merged.add(intervals[0]);
             for (int i = 1; i < intervals.length; i++) {

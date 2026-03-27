@@ -60,38 +60,33 @@ public class SortList {
             if (head == null || head.next == null) {
                 return head;
             }
-            ListNode slow = head;
-            ListNode fast = head;
-            ListNode pre = null;
+            ListNode slow = head, fast = head.next;
             while (fast != null && fast.next != null) {
-                pre = slow;
                 slow = slow.next;
                 fast = fast.next.next;
             }
-            pre.next = null;
+            ListNode mid = slow.next;
+            slow.next = null;
             ListNode left = sortList(head);
-            ListNode right = sortList(slow);
-            return mergeTwoLists(left, right);
-
+            ListNode right = sortList(mid);
+            return merge(left, right);
         }
 
-        public ListNode mergeTwoLists(ListNode list1, ListNode list2) {
-            ListNode listNode = new ListNode(-1);
-            ListNode cur = listNode;
-            while (list1 != null && list2 != null) {
-                if (list1.val < list2.val) {
-                    cur.next = list1;
-                    list1 = list1.next;
+        public ListNode merge(ListNode left, ListNode right) {
+            ListNode dummy = new ListNode(-1);
+            ListNode cur = dummy;
+            while (left != null && right != null) {
+                if (left.val < right.val) {
+                    cur.next = left;
+                    left = left.next;
                 } else {
-                    cur.next = list2;
-                    list2 = list2.next;
+                    cur.next = right;
+                    right = right.next;
                 }
                 cur = cur.next;
             }
-            cur.next = list1 != null ? list1 : list2;
-
-
-            return listNode.next;
+            cur.next = left != null ? left : right;
+            return dummy.next;
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

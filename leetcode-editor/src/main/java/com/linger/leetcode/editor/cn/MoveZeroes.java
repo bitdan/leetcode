@@ -51,18 +51,16 @@ public class MoveZeroes {
     //leetcode submit region begin(Prohibit modification and deletion)
     class Solution {
         public void moveZeroes(int[] nums) {
-            int cur = 0;
-            for (int num : nums) {
-                if (num != 0) {
-                    nums[cur] = num;
-                    cur++;
+            int slow = 0;
+            for (int i = 0; i < nums.length; i++) {
+                if (nums[i] != 0) {
+                    nums[slow] = nums[i];
+                    slow++;
                 }
             }
-            while (cur < nums.length) {
-                nums[cur] = 0;
-                cur++;
+            for (int i = slow; i < nums.length; i++) {
+                nums[i] = 0;
             }
-
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

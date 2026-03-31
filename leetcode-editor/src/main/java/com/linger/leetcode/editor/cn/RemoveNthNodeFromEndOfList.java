@@ -49,9 +49,7 @@ import lombok.extern.slf4j.Slf4j;
 public class RemoveNthNodeFromEndOfList {
     public static void main(String[] args) {
         Solution solution = new RemoveNthNodeFromEndOfList().new Solution();
-//        ListNode listNode = ListNode.of(1, 2, 3, 4, 5);
-//        log.info("{}", solution.removeNthFromEnd(listNode, 2));
-        ListNode listNode = ListNode.of(1, 2);
+        ListNode listNode = ListNode.of(1, 2, 3, 4, 5);
         log.info("{}", solution.removeNthFromEnd(listNode, 2));
     }
     //leetcode submit region begin(Prohibit modification and deletion)
@@ -62,10 +60,10 @@ public class RemoveNthNodeFromEndOfList {
             dummy.next = head;
             ListNode slow = dummy;
             ListNode fast = dummy;
-            for (int i = 0; i <= n; i++) {
+            for (int i = 0; i < n; i++) {
                 fast = fast.next;
             }
-            while (fast != null) {
+            while (fast.next != null) {
                 fast = fast.next;
                 slow = slow.next;
             }

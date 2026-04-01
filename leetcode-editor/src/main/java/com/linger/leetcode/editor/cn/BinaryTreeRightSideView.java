@@ -70,7 +70,7 @@ public class BinaryTreeRightSideView {
         TreeNode treeNode = TreeNode.of(1, 2, 3, null, 5, null, 4);
         log.info("{}", solution.rightSideView(treeNode));
     }
-    //leetcode submit region begin(Prohibit modification and deletion)
+
 
     class Solution {
         public List<Integer> rightSideView(TreeNode root) {
@@ -82,9 +82,9 @@ public class BinaryTreeRightSideView {
             queue.offer(root);
             while (!queue.isEmpty()) {
                 int size = queue.size();
-                while (size-- > 0) {
+                for (int i = 0; i < size; i++) {
                     TreeNode node = queue.poll();
-                    if (size == 0) {
+                    if (i == size - 1) {
                         res.add(node.val);
                     }
                     if (node.left != null) {
@@ -94,11 +94,10 @@ public class BinaryTreeRightSideView {
                         queue.offer(node.right);
                     }
                 }
-
             }
             return res;
         }
     }
-//leetcode submit region end(Prohibit modification and deletion)
+
 
 }

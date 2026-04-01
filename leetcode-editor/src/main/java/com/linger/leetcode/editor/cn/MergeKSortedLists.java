@@ -46,9 +46,8 @@
 // Related Topics 链表 分治 堆（优先队列） 归并排序 👍 3183 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
-import com.linger.leetcode.editor.cn.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

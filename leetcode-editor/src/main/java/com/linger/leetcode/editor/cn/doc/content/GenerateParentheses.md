@@ -24,4 +24,4 @@
  <li><code>1 &lt;= n &lt;= 8</code></li> 
 </ul>
 
-<div><div>Related Topics</div><div><li>字符串</li><li>动态规划</li><li>回溯</li></div></div><br><div><li>👍 3884</li><li>👎 0</li></div>
+<div><div>Related Topics</div><div><li>字符串</li><li>动态规划</li><li>回溯</li></div></div><br><div><li>👍 4053</li><li>👎 0</li></div>

@@ -31,7 +31,7 @@
 // Related Topics 字典树 数组 字符串 👍 3485 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

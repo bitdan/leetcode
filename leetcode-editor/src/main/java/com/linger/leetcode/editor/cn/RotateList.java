@@ -29,9 +29,8 @@
 // Related Topics 链表 双指针 👍 1183 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
-import com.linger.leetcode.editor.cn.ListNode;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

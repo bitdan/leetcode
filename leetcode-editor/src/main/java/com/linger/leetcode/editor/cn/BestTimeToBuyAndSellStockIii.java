@@ -50,7 +50,7 @@
 // Related Topics 数组 动态规划 👍 1924 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

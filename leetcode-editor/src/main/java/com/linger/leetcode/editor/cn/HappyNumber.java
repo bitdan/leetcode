@@ -42,7 +42,7 @@
 // Related Topics 哈希表 数学 双指针 👍 1808 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

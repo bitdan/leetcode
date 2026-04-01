@@ -27,7 +27,7 @@
 // Related Topics 字符串 动态规划 回溯 👍 4053 👎 0
 
 
-package com.linger.leetcode.editor.leetcode.editor.cn;
+package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 

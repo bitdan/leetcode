@@ -62,7 +62,7 @@ import lombok.extern.slf4j.Slf4j;
 public class FindMinimumInRotatedSortedArray {
     public static void main(String[] args) {
         Solution solution = new FindMinimumInRotatedSortedArray().new Solution();
-        log.info("{}", solution.findMin(new int[]{3, 4, 5, 1, 2}));
+        log.info("{}", solution.findMin(new int[]{3, 1, 2}));
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)

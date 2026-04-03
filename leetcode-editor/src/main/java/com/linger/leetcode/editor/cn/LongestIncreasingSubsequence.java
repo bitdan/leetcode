@@ -49,12 +49,10 @@ package com.linger.leetcode.editor.cn;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.lang.reflect.Array;
-import java.util.Arrays;
-
 @Slf4j
 public class LongestIncreasingSubsequence {
     public static void main(String[] args) {
+        // todo 需要再次理解
         Solution solution = new LongestIncreasingSubsequence().new Solution();
         int[] ints = {10, 9, 2, 5, 3, 7, 101, 18};
         log.info("{}", solution.lengthOfLIS(ints));
@@ -66,17 +64,18 @@ public class LongestIncreasingSubsequence {
             int n = nums.length;
             int[] dp = new int[n];
             int res = 0;
-            for (int num : nums) {
-                int left = 0, right = res;
+            for (int i = 0; i < n; i++) {
+                int left = 0;
+                int right = res;
                 while (left < right) {
                     int mid = left + (right - left) / 2;
-                    if (dp[mid] < num) {
+                    if (dp[mid] < nums[i]) {
                         left = mid + 1;
-                    }else{
+                    } else {
                         right = mid;
                     }
                 }
-                dp[left] = num;
+                dp[left] = nums[i];
                 if (left == res) {
                     res++;
                 }

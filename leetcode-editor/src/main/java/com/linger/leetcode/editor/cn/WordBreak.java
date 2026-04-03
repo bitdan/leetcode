@@ -56,7 +56,7 @@ import java.util.Set;
 public class WordBreak {
     public static void main(String[] args) {
         Solution solution = new WordBreak().new Solution();
-        log.info("{}", solution.wordBreak("catsandog", Arrays.asList("cats", "dog", "sand", "and", "cat")));
+        log.info("{}", solution.wordBreak("leetcode", Arrays.asList("leet", "code")));
     }
 
     //leetcode submit region begin(Prohibit modification and deletion)
@@ -68,14 +68,15 @@ public class WordBreak {
             dp[0] = true;
             for (int i = 1; i <= n; i++) {
                 for (int j = 0; j < i; j++) {
+                    //左边已经合法 且当前字符合法
                     if (dp[j] && set.contains(s.substring(j, i))) {
+                        //符合要求 ,整体合法
                         dp[i] = true;
                         break;
                     }
                 }
             }
             return dp[n];
-
         }
     }
 //leetcode submit region end(Prohibit modification and deletion)

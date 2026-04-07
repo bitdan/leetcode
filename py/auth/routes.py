@@ -1,7 +1,16 @@
 import logging
 
 from auth.captcha import generate_captcha_payload
-from auth.schemas import ApiResponse, TotpAccountUpsert, TotpImportRequest, UserCreate, UserInfo, UserLogin
+from auth.schemas import (
+    ApiResponse,
+    ChangePasswordRequest,
+    TotpAccountUpsert,
+    TotpImportRequest,
+    UserCreate,
+    UserInfo,
+    UserLogin,
+    UserProfileUpdate,
+)
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -61,6 +70,23 @@ def create_router(container) -> APIRouter:
     async def get_user_info(current_user: UserInfo = Depends(get_current_user)):
         data = current_user.model_dump(mode="json") if hasattr(current_user, "model_dump") else current_user.dict()
         return ApiResponse(code=200, msg="获取用户信息成功", data=data)
+
+    @router.put("/profile", response_model=ApiResponse)
+    async def update_profile(payload: UserProfileUpdate, current_user: UserInfo = Depends(get_current_user)):
+        try:
+            data = user_service.update_profile(current_user.user.user_id, payload)
+            data_dict = data.model_dump(mode="json") if hasattr(data, "model_dump") else data.dict()
+            return ApiResponse(code=200, msg="更新个人信息成功", data=data_dict)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.put("/profile/password", response_model=ApiResponse)
+    async def change_password(payload: ChangePasswordRequest, current_user: UserInfo = Depends(get_current_user)):
+        try:
+            user_service.change_password(current_user.user.user_id, payload)
+            return ApiResponse(code=200, msg="修改密码成功")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     @router.get("/captchaImage", response_model=ApiResponse)
     async def get_captcha():

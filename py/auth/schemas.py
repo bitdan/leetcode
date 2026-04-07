@@ -50,6 +50,17 @@ class UserInfo(BaseModel):
     permissions: List[str] = Field(default_factory=list)
 
 
+class UserProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    avatar: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    oldPassword: str
+    newPassword: str
+    confirmPassword: str
+
+
 class TotpAccountUpsert(BaseModel):
     label: Optional[str] = None
     issuer: Optional[str] = None

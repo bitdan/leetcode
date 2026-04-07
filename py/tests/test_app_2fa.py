@@ -117,6 +117,43 @@ class TwoFactorApiTest(unittest.TestCase):
         delete_resp = self.client.delete(f"/api/v1/2fa/accounts/{account_id}", headers=self.headers)
         self.assertEqual(200, delete_resp.status_code)
 
+    def test_profile_update_and_change_password(self):
+        update_resp = self.client.put(
+            "/api/v1/profile",
+            json={"email": "updated@example.com", "avatar": "https://example.com/avatar.png"},
+            headers=self.headers,
+        )
+        self.assertEqual(200, update_resp.status_code)
+        self.assertEqual("updated@example.com", update_resp.json()["data"]["user"]["email"])
+        self.assertEqual("https://example.com/avatar.png", update_resp.json()["data"]["user"]["avatar"])
+
+        change_resp = self.client.put(
+            "/api/v1/profile/password",
+            json={
+                "oldPassword": "123456",
+                "newPassword": "12345678",
+                "confirmPassword": "12345678",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(200, change_resp.status_code)
+
+        captcha = self.client.get("/api/v1/captchaImage")
+        uuid_value = captcha.json()["data"]["uuid"]
+        old_login = self.client.post(
+            "/api/v1/login",
+            json={"username": "admin", "password": "123456", "code": "TEST", "uuid": uuid_value},
+        )
+        self.assertEqual(401, old_login.status_code)
+
+        captcha = self.client.get("/api/v1/captchaImage")
+        uuid_value = captcha.json()["data"]["uuid"]
+        new_login = self.client.post(
+            "/api/v1/login",
+            json={"username": "admin", "password": "12345678", "code": "TEST", "uuid": uuid_value},
+        )
+        self.assertEqual(200, new_login.status_code)
+
 
 def encode_varint(value: int) -> bytes:
     parts = bytearray()

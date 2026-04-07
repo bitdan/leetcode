@@ -5,7 +5,7 @@ from typing import Optional
 
 from auth.jwt_handler import jwt_handler
 from auth.redis_client import redis_client
-from auth.schemas import User, UserCreate, UserInfo, UserLogin
+from auth.schemas import ChangePasswordRequest, User, UserCreate, UserInfo, UserLogin, UserProfileUpdate
 from auth.store import InMemoryUserRepository, SessionStore, UserRecord, build_user, build_user_info
 from core.settings import get_settings
 
@@ -66,15 +66,49 @@ class UserService:
         record = self.user_repository.get_by_user_id(user_id)
         return build_user_info(record) if record else None
 
+    def update_profile(self, user_id: str, payload: UserProfileUpdate) -> UserInfo:
+        record = self.user_repository.get_by_user_id(user_id)
+        if not record:
+            raise ValueError("用户不存在")
+
+        record.email = payload.email
+        record.avatar = payload.avatar
+        record.updated_at = datetime.now().isoformat()
+        self.user_repository.update(record)
+        return self._refresh_session_user_info(user_id)
+
+    def change_password(self, user_id: str, payload: ChangePasswordRequest) -> bool:
+        record = self.user_repository.get_by_user_id(user_id)
+        if not record:
+            raise ValueError("用户不存在")
+        if not self.jwt_handler.verify_password(payload.oldPassword, record.password_hash):
+            raise ValueError("原密码错误")
+        if payload.newPassword != payload.confirmPassword:
+            raise ValueError("两次输入的新密码不一致")
+        if len(payload.newPassword) < 6:
+            raise ValueError("密码长度至少6位")
+        if payload.oldPassword == payload.newPassword:
+            raise ValueError("新密码不能与原密码相同")
+
+        record.password_hash = self.jwt_handler.get_password_hash(payload.newPassword)
+        record.updated_at = datetime.now().isoformat()
+        self.user_repository.update(record)
+        self._refresh_session_user_info(user_id)
+        return True
+
     def create_user_session(self, user: User) -> str:
         token = self.jwt_handler.create_access_token({"sub": user.user_id, "username": user.username})
-        user_info = self.get_user_info(user.user_id)
+        self.session_store.set_token(user.user_id, token)
+        self._refresh_session_user_info(user.user_id)
+        return token
+
+    def _refresh_session_user_info(self, user_id: str) -> UserInfo:
+        user_info = self.get_user_info(user_id)
         if user_info is None:
             raise ValueError("用户不存在")
         user_info_dict = user_info.model_dump(mode="json") if hasattr(user_info, "model_dump") else user_info.dict()
-        self.session_store.set_token(user.user_id, token)
-        self.session_store.set_user_info(user.user_id, user_info_dict)
-        return token
+        self.session_store.set_user_info(user_id, user_info_dict)
+        return user_info
 
     def logout_user(self, user_id: str) -> bool:
         self.session_store.delete_token(user_id)

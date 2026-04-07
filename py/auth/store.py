@@ -157,6 +157,10 @@ class InMemoryUserRepository:
         self.users[record.username] = record
         return record
 
+    def update(self, record: UserRecord) -> UserRecord:
+        self.users[record.username] = record
+        return record
+
 
 def build_user(record: UserRecord) -> User:
     return User(

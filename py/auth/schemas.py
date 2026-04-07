@@ -50,6 +50,23 @@ class UserInfo(BaseModel):
     permissions: List[str] = Field(default_factory=list)
 
 
+class TotpAccountUpsert(BaseModel):
+    label: Optional[str] = None
+    issuer: Optional[str] = None
+    accountName: Optional[str] = None
+    secret: Optional[str] = None
+    digits: int = 6
+    period: int = 30
+    algorithm: str = "SHA1"
+    otpauthUri: Optional[str] = None
+
+
+class TotpImportRequest(BaseModel):
+    text: Optional[str] = None
+    items: List[TotpAccountUpsert] = Field(default_factory=list)
+    mergeMode: str = "append"
+
+
 class CaptchaResponse(BaseModel):
     captcha_enabled: bool = True
     uuid: str

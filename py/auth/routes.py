@@ -1,7 +1,7 @@
 import logging
 
 from auth.captcha import generate_captcha_payload
-from auth.schemas import ApiResponse, UserCreate, UserInfo, UserLogin
+from auth.schemas import ApiResponse, TotpAccountUpsert, TotpImportRequest, UserCreate, UserInfo, UserLogin
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -12,6 +12,7 @@ security = HTTPBearer()
 def create_router(container) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["认证"])
     user_service = container.user_service
+    totp_service = container.totp_service
 
     async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> UserInfo:
         user_info = user_service.validate_user_session(credentials.credentials)
@@ -64,5 +65,70 @@ def create_router(container) -> APIRouter:
     @router.get("/captchaImage", response_model=ApiResponse)
     async def get_captcha():
         return ApiResponse(code=200, msg="获取验证码成功", data=generate_captcha_payload())
+
+    @router.get("/2fa/accounts", response_model=ApiResponse)
+    async def list_totp_accounts(current_user: UserInfo = Depends(get_current_user)):
+        data = totp_service.list_accounts(current_user.user.user_id)
+        return ApiResponse(code=200, msg="获取 2FA 账号成功", data=data)
+
+    @router.get("/2fa/accounts/export", response_model=ApiResponse)
+    async def export_totp_accounts(exportFormat: str = "json", current_user: UserInfo = Depends(get_current_user)):
+        try:
+            data = totp_service.export_accounts(current_user.user.user_id, exportFormat)
+            return ApiResponse(code=200, msg="导出 2FA 账号成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.get("/2fa/accounts/{account_id}", response_model=ApiResponse)
+    async def get_totp_account(account_id: str, current_user: UserInfo = Depends(get_current_user)):
+        data = totp_service.get_account(current_user.user.user_id, account_id)
+        if not data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
+        return ApiResponse(code=200, msg="获取 2FA 账号成功", data=data)
+
+    @router.post("/2fa/accounts", response_model=ApiResponse)
+    async def create_totp_account(payload: TotpAccountUpsert, current_user: UserInfo = Depends(get_current_user)):
+        try:
+            data = totp_service.create_account(
+                current_user.user.user_id,
+                payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else payload.dict(
+                    exclude_none=True),
+            )
+            return ApiResponse(code=200, msg="创建 2FA 账号成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.put("/2fa/accounts/{account_id}", response_model=ApiResponse)
+    async def update_totp_account(account_id: str, payload: TotpAccountUpsert,
+                                  current_user: UserInfo = Depends(get_current_user)):
+        try:
+            data = totp_service.update_account(
+                current_user.user.user_id,
+                account_id,
+                payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else payload.dict(
+                    exclude_none=True),
+            )
+            return ApiResponse(code=200, msg="更新 2FA 账号成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.delete("/2fa/accounts/{account_id}", response_model=ApiResponse)
+    async def delete_totp_account(account_id: str, current_user: UserInfo = Depends(get_current_user)):
+        try:
+            totp_service.delete_account(current_user.user.user_id, account_id)
+            return ApiResponse(code=200, msg="删除 2FA 账号成功")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    @router.post("/2fa/accounts/import", response_model=ApiResponse)
+    async def import_totp_accounts(payload: TotpImportRequest, current_user: UserInfo = Depends(get_current_user)):
+        try:
+            data = totp_service.import_accounts(
+                current_user.user.user_id,
+                payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(),
+            )
+            return ApiResponse(code=200, msg="导入 2FA 账号成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return router

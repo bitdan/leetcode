@@ -5,6 +5,8 @@ from agent_chat.service import AgentChatService
 from auth.security import JWTHandler
 from auth.service import UserService
 from auth.store import InMemoryUserRepository, MemorySessionStore, RedisSessionStore
+from auth.totp_service import TotpService
+from auth.totp_store import create_totp_store
 from core.settings import Settings
 from game.service import GameService
 from mcp_server.registry import create_default_tool_registry
@@ -17,6 +19,7 @@ class Container:
     settings: Settings
     jwt_handler: JWTHandler
     user_service: UserService
+    totp_service: TotpService
     game_service: GameService
     agent_chat_service: AgentChatService
     mcp_tool_registry: dict
@@ -50,10 +53,15 @@ def build_container(settings: Settings) -> Container:
         jwt_handler=jwt_handler,
         session_ttl_hours=settings.jwt_expiration_hours,
     )
+    totp_service = TotpService(
+        totp_store=create_totp_store(settings),
+        issuer_name=settings.app_name,
+    )
     return Container(
         settings=settings,
         jwt_handler=jwt_handler,
         user_service=user_service,
+        totp_service=totp_service,
         game_service=GameService(),
         agent_chat_service=AgentChatService(),
         mcp_tool_registry=create_default_tool_registry(),

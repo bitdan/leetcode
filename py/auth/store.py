@@ -21,6 +21,28 @@ class UserRecord:
     updated_at: str
 
 
+class UserRepository(ABC):
+    @abstractmethod
+    def exists(self, username: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_username(self, username: str) -> Optional[UserRecord]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save(self, record: UserRecord) -> UserRecord:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self, record: UserRecord) -> UserRecord:
+        raise NotImplementedError
+
+
 class SessionStore(ABC):
     @abstractmethod
     def set_token(self, user_id: str, token: str) -> bool:
@@ -124,7 +146,7 @@ class RedisSessionStore(SessionStore):
         return bool(self.redis_client.exists(f"token:{user_id}"))
 
 
-class InMemoryUserRepository:
+class InMemoryUserRepository(UserRepository):
     def __init__(self, jwt_handler):
         now = datetime.now().isoformat()
         self.users = {
@@ -160,6 +182,110 @@ class InMemoryUserRepository:
     def update(self, record: UserRecord) -> UserRecord:
         self.users[record.username] = record
         return record
+
+
+class RedisUserRepository(UserRepository):
+    USERNAME_KEY_PREFIX = "auth:user:username:"
+    USER_ID_KEY_PREFIX = "auth:user:id:"
+
+    def __init__(self, host: str, port: int, database: int, password: str, decode_responses: bool, jwt_handler):
+        self.jwt_handler = jwt_handler
+        self.redis_client = redis.Redis(
+            host=host,
+            port=port,
+            db=database,
+            password=password,
+            decode_responses=decode_responses,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
+        self.redis_client.ping()
+        self._ensure_default_admin()
+
+    def exists(self, username: str) -> bool:
+        return bool(self.redis_client.exists(self._username_key(username)))
+
+    def get_by_username(self, username: str) -> Optional[UserRecord]:
+        user_id = self.redis_client.get(self._username_key(username))
+        if not user_id:
+            return None
+        return self.get_by_user_id(user_id)
+
+    def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:
+        payload = self.redis_client.get(self._user_id_key(user_id))
+        if not payload:
+            return None
+        return self._deserialize(payload)
+
+    def save(self, record: UserRecord) -> UserRecord:
+        self._persist(record)
+        return record
+
+    def update(self, record: UserRecord) -> UserRecord:
+        self._persist(record)
+        return record
+
+    def _persist(self, record: UserRecord) -> None:
+        payload = json.dumps(record.__dict__, ensure_ascii=False)
+        pipe = self.redis_client.pipeline()
+        pipe.set(self._user_id_key(record.user_id), payload)
+        pipe.set(self._username_key(record.username), record.user_id)
+        pipe.execute()
+
+    def _serialize_default_admin(self) -> UserRecord:
+        now = datetime.now().isoformat()
+        return UserRecord(
+            user_id="admin_001",
+            username="admin",
+            password_hash=self.jwt_handler.get_password_hash("123456"),
+            email="admin@example.com",
+            avatar=None,
+            roles=["admin"],
+            permissions=["*"],
+            created_at=now,
+            updated_at=now,
+        )
+
+    def _ensure_default_admin(self) -> None:
+        if self.exists("admin"):
+            return
+        self.save(self._serialize_default_admin())
+
+    def _username_key(self, username: str) -> str:
+        return f"{self.USERNAME_KEY_PREFIX}{username}"
+
+    def _user_id_key(self, user_id: str) -> str:
+        return f"{self.USER_ID_KEY_PREFIX}{user_id}"
+
+    def _deserialize(self, payload: str) -> UserRecord:
+        data = json.loads(payload)
+        return UserRecord(
+            user_id=data["user_id"],
+            username=data["username"],
+            password_hash=data["password_hash"],
+            email=data.get("email"),
+            avatar=data.get("avatar"),
+            roles=list(data.get("roles", [])),
+            permissions=list(data.get("permissions", [])),
+            created_at=data["created_at"],
+            updated_at=data["updated_at"],
+        )
+
+
+def create_user_repository(settings, jwt_handler) -> UserRepository:
+    if settings.use_redis_sessions:
+        try:
+            return RedisUserRepository(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                database=settings.redis.database,
+                password=settings.redis.password,
+                decode_responses=settings.redis.decode_responses,
+                jwt_handler=jwt_handler,
+            )
+        except Exception:
+            pass
+    return InMemoryUserRepository(jwt_handler=jwt_handler)
 
 
 def build_user(record: UserRecord) -> User:

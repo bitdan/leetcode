@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from agent_chat.service import AgentChatService
 from auth.security import JWTHandler
 from auth.service import UserService
-from auth.store import InMemoryUserRepository, MemorySessionStore, RedisSessionStore
+from auth.store import MemorySessionStore, RedisSessionStore, create_user_repository
 from auth.totp_service import TotpService
 from auth.totp_store import create_totp_store
 from core.settings import Settings
@@ -46,7 +46,7 @@ def build_container(settings: Settings) -> Container:
         except Exception:
             logger.warning("Redis unavailable. Falling back to in-memory session store.", exc_info=True)
 
-    user_repository = InMemoryUserRepository(jwt_handler=jwt_handler)
+    user_repository = create_user_repository(settings, jwt_handler)
     user_service = UserService(
         user_repository=user_repository,
         session_store=session_store,

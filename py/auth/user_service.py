@@ -6,14 +6,14 @@ from typing import Optional
 from auth.jwt_handler import jwt_handler
 from auth.redis_client import redis_client
 from auth.schemas import ChangePasswordRequest, User, UserCreate, UserInfo, UserLogin, UserProfileUpdate
-from auth.store import InMemoryUserRepository, SessionStore, UserRecord, build_user, build_user_info
+from auth.store import SessionStore, UserRecord, UserRepository, build_user, build_user_info, create_user_repository
 from core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class UserService:
-    def __init__(self, user_repository: InMemoryUserRepository, session_store: SessionStore, jwt_handler,
+    def __init__(self, user_repository: UserRepository, session_store: SessionStore, jwt_handler,
                  session_ttl_hours: int):
         self.user_repository = user_repository
         self.session_store = session_store
@@ -140,7 +140,7 @@ class UserService:
 
 _settings = get_settings()
 user_service = UserService(
-    user_repository=InMemoryUserRepository(jwt_handler=jwt_handler),
+    user_repository=create_user_repository(_settings, jwt_handler),
     session_store=redis_client,
     jwt_handler=jwt_handler,
     session_ttl_hours=_settings.jwt_expiration_hours,

@@ -49,7 +49,7 @@ import java.util.HashSet;
 public class LongestSubstringWithoutRepeatingCharacters {
     public static void main(String[] args) {
         Solution solution = new LongestSubstringWithoutRepeatingCharacters().new Solution();
-        log.info("{}", solution.lengthOfLongestSubstring("abcabcbb"));
+        log.info("{}", solution.lengthOfLongestSubstring2("abcabcbb"));
 
     }
 
@@ -69,6 +69,21 @@ public class LongestSubstringWithoutRepeatingCharacters {
                     left++;
                 }
                 max = Math.max(max, right - left);
+            }
+            return max;
+        }
+
+        public int lengthOfLongestSubstring2(String s) {
+            HashSet<Character> characters = new HashSet<>();
+            int left = 0;
+            int max = 0;
+            for (int right = 0; right < s.length(); right++) {
+                while (characters.contains(s.charAt(right))) {
+                    characters.remove(s.charAt(left));
+                    left++;
+                }
+                characters.add(s.charAt(right));
+                max = Math.max(max, right - left + 1);
             }
             return max;
         }

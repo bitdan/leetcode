@@ -99,13 +99,13 @@ public class LruCache {
         Node node = map.get(key);
         if (node != null) {
             removeNode(node);
-            addToHdead(node);
+            addToHead(node);
             return node.value;
         }
         return -1;
     }
 
-    private void addToHdead(Node node) {
+    private void addToHead(Node node) {
         node.pre = head;
         node.next = head.next;
         head.next.pre = node;
@@ -121,11 +121,11 @@ public class LruCache {
         Node node = map.get(key);
         if (node != null) {
             removeNode(node);
+            addToHead(node);
             node.value = value;
-            addToHdead(node);
         } else {
             Node node1 = new Node(key, value);
-            addToHdead(node1);
+            addToHead(node1);
             map.put(key, node1);
             if (map.size() > capacity) {
                 Node tailPre = tail.pre;

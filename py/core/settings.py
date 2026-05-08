@@ -31,6 +31,7 @@ class Settings:
     auth_cookie_secure: bool
     redis: RedisSettings
     use_redis_sessions: bool
+    use_redis_user_store: bool
 
 
 def _split_csv(value: str, default: List[str]) -> List[str]:
@@ -67,6 +68,7 @@ def get_settings() -> Settings:
             decode_responses=os.getenv("REDIS_DECODE_RESPONSES", "true").lower() == "true",
         ),
         use_redis_sessions=os.getenv("USE_REDIS_SESSIONS", "true").lower() == "true",
+        use_redis_user_store=os.getenv("USE_REDIS_USER_STORE", "true").lower() == "true",
     )
 
 

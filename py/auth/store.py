@@ -273,7 +273,7 @@ class RedisUserRepository(UserRepository):
 
 
 def create_user_repository(settings, jwt_handler) -> UserRepository:
-    if settings.use_redis_sessions:
+    if getattr(settings, "use_redis_user_store", settings.use_redis_sessions):
         try:
             return RedisUserRepository(
                 host=settings.redis.host,

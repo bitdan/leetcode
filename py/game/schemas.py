@@ -66,7 +66,17 @@ class MakeMoveRequest(BaseModel):
 
 
 class GameEvent(BaseModel):
-    type: Literal["player_joined", "player_left", "game_started", "move_made", "game_ended", "error"]
+    type: Literal[
+        "connected",
+        "room_state",
+        "player_joined",
+        "player_left",
+        "game_started",
+        "move_made",
+        "game_ended",
+        "error",
+        "heartbeat",
+    ]
     room_id: str
     data: Dict[str, object]
     timestamp: float

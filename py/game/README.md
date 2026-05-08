@@ -119,7 +119,8 @@ python test_game_api.py
 ## 注意事项
 
 1. **认证**: 所有API需要Bearer token认证
-2. **SSE连接**: 使用查询参数传递token（EventSource限制）
+2. **SSE连接**: 优先使用登录接口写入的 `HttpOnly` Cookie 鉴权；仍兼容旧的 `access_token` 查询参数。生产 HTTPS 环境建议设置
+   `AUTH_COOKIE_SECURE=true`。
 3. **房间管理**: 房主离开时房间自动删除
 4. **状态同步**: 通过SSE确保实时状态同步
 5. **错误处理**: 完善的错误处理和用户提示

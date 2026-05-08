@@ -28,6 +28,7 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     jwt_expiration_hours: int
+    auth_cookie_secure: bool
     redis: RedisSettings
     use_redis_sessions: bool
 
@@ -57,6 +58,7 @@ def get_settings() -> Settings:
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", "change-me-in-env"),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         jwt_expiration_hours=int(os.getenv("JWT_EXPIRATION_HOURS", "6")),
+        auth_cookie_secure=os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true",
         redis=RedisSettings(
             host=os.getenv("REDIS_HOST", "43.156.83.246"),
             port=int(os.getenv("REDIS_PORT", "6379")),

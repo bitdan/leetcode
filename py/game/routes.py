@@ -3,7 +3,7 @@ import json
 import logging
 
 from auth.schemas import ApiResponse, UserInfo
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from game.schemas import JoinRoomRequest, MakeMoveRequest, Player, PlayerColor
 
@@ -75,9 +75,14 @@ def create_router(container) -> APIRouter:
         return ApiResponse(code=200, msg="获取房间信息成功", data=data)
 
     @router.get("/events/{room_id}")
-    async def stream_events(room_id: str, access_token: str = ""):
-        current_user = container.user_service.validate_user_session(access_token)
-        if not access_token or not current_user:
+    async def stream_events(
+            room_id: str,
+            access_token: str = "",
+            tool_hub_token: str = Cookie(default=""),
+    ):
+        token = access_token or tool_hub_token
+        current_user = container.user_service.validate_user_session(token)
+        if not token or not current_user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="认证失败，请重新登录")
 
         async def event_generator():
@@ -106,8 +111,7 @@ def create_router(container) -> APIRouter:
         return StreamingResponse(
             event_generator(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*",
-                     "Access-Control-Allow-Headers": "*"},
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
     return router

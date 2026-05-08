@@ -12,10 +12,12 @@ from auth.schemas import (
     UserProfileUpdate,
 )
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
+AUTH_COOKIE_NAME = "tool_hub_token"
 
 
 def create_router(container) -> APIRouter:
@@ -35,11 +37,23 @@ def create_router(container) -> APIRouter:
 
     router.get_current_user = get_current_user
 
+    def set_auth_cookie(response: Response, token: str) -> None:
+        response.set_cookie(
+            key=AUTH_COOKIE_NAME,
+            value=token,
+            max_age=container.settings.jwt_expiration_hours * 60 * 60,
+            httponly=True,
+            secure=container.settings.auth_cookie_secure,
+            samesite="lax",
+            path="/",
+        )
+
     @router.post("/register", response_model=ApiResponse)
-    async def register(user_data: UserCreate):
+    async def register(user_data: UserCreate, response: Response):
         try:
             user = user_service.register_user(user_data)
             token = user_service.create_user_session(user)
+            set_auth_cookie(response, token)
             return ApiResponse(code=200, msg="注册成功", data={"token": token})
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -49,10 +63,11 @@ def create_router(container) -> APIRouter:
                                 detail="注册失败，请稍后重试") from exc
 
     @router.post("/login", response_model=ApiResponse)
-    async def login(login_data: UserLogin):
+    async def login(login_data: UserLogin, response: Response):
         try:
             user = user_service.authenticate_user(login_data)
             token = user_service.create_user_session(user)
+            set_auth_cookie(response, token)
             return ApiResponse(code=200, msg="登录成功", data={"token": token})
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
@@ -62,8 +77,9 @@ def create_router(container) -> APIRouter:
                                 detail="登录失败，请稍后重试") from exc
 
     @router.post("/logout", response_model=ApiResponse)
-    async def logout(current_user: UserInfo = Depends(get_current_user)):
+    async def logout(response: Response, current_user: UserInfo = Depends(get_current_user)):
         user_service.logout_user(current_user.user.user_id)
+        response.delete_cookie(AUTH_COOKIE_NAME, path="/")
         return ApiResponse(code=200, msg="登出成功")
 
     @router.get("/getInfo", response_model=ApiResponse)

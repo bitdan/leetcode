@@ -7,6 +7,7 @@ from auth.service import UserService
 from auth.store import MemorySessionStore, RedisSessionStore, create_user_repository
 from auth.totp_service import TotpService
 from auth.totp_store import create_totp_store
+from chat.service import ChatService
 from core.settings import Settings
 from game.service import GameService
 from mcp_server.registry import create_default_tool_registry
@@ -21,6 +22,7 @@ class Container:
     user_service: UserService
     totp_service: TotpService
     game_service: GameService
+    chat_service: ChatService
     agent_chat_service: AgentChatService
     mcp_tool_registry: dict
 
@@ -63,6 +65,7 @@ def build_container(settings: Settings) -> Container:
         user_service=user_service,
         totp_service=totp_service,
         game_service=GameService(),
+        chat_service=ChatService(),
         agent_chat_service=AgentChatService(),
         mcp_tool_registry=create_default_tool_registry(),
     )

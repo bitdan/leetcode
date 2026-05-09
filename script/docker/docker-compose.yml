@@ -63,7 +63,8 @@ services:
       - /docker/redis/data/:/redis/data/:rw
     command: "redis-server /redis/config/redis.conf"
     privileged: true
-    network_mode: "host"
+    networks:
+      - linger-net
 
   minio:
     # minio 最后一个未阉割版本 不能再进行升级 在往上的版本功能被阉割
@@ -156,3 +157,7 @@ services:
       - /docker/snailjob/logs/:/ruoyi/snailjob/logs
     privileged: true
     network_mode: "host"
+
+networks:
+  linger-net:
+    external: true

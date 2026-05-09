@@ -16,10 +16,22 @@ services:
       - OPENAI_API_BASE=https://api.chatanywhere.org/v1
       - MEILI_HTTP_ADDR=http://192.168.9.166:7700/
       - MEILI_API_KEY=admin
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DATABASE=14
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dudu0.0@}
+      - USE_REDIS_SESSIONS=true
+      - USE_REDIS_USER_STORE=true
     restart: unless-stopped
+    networks:
+      - linger-net
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  linger-net:
+    external: true

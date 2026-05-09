@@ -1,11 +1,13 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Dict, List
 
 from dotenv import load_dotenv
 
 load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,9 @@ class Settings:
     redis: RedisSettings
     use_redis_sessions: bool
     use_redis_user_store: bool
+    use_redis_chat: bool
+    chat_history_limit: int
+    chat_history_ttl_seconds: int
 
 
 def _split_csv(value: str, default: List[str]) -> List[str]:
@@ -69,6 +74,9 @@ def get_settings() -> Settings:
         ),
         use_redis_sessions=os.getenv("USE_REDIS_SESSIONS", "true").lower() == "true",
         use_redis_user_store=os.getenv("USE_REDIS_USER_STORE", "true").lower() == "true",
+        use_redis_chat=os.getenv("USE_REDIS_CHAT", "true").lower() == "true",
+        chat_history_limit=int(os.getenv("CHAT_HISTORY_LIMIT", "100")),
+        chat_history_ttl_seconds=int(os.getenv("CHAT_HISTORY_TTL_SECONDS", str(7 * 24 * 60 * 60))),
     )
 
 

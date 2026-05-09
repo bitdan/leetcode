@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,7 +18,15 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     container = build_container(settings)
 
-    app = FastAPI(title=settings.app_name, version=settings.app_version)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await container.chat_service.start()
+        try:
+            yield
+        finally:
+            await container.chat_service.stop()
+
+    app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
     app.state.container = container
 
     app.add_middleware(

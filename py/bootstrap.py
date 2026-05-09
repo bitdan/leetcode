@@ -7,7 +7,7 @@ from auth.service import UserService
 from auth.store import MemorySessionStore, RedisSessionStore, create_user_repository
 from auth.totp_service import TotpService
 from auth.totp_store import create_totp_store
-from chat.service import ChatService
+from chat.service import ChatService, RedisChatService
 from core.settings import Settings
 from game.service import GameService
 from mcp_server.registry import create_default_tool_registry
@@ -65,7 +65,24 @@ def build_container(settings: Settings) -> Container:
         user_service=user_service,
         totp_service=totp_service,
         game_service=GameService(),
-        chat_service=ChatService(),
+        chat_service=create_chat_service(settings),
         agent_chat_service=AgentChatService(),
         mcp_tool_registry=create_default_tool_registry(),
     )
+
+
+def create_chat_service(settings: Settings) -> ChatService:
+    if settings.use_redis_chat:
+        try:
+            return RedisChatService(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                database=settings.redis.database,
+                password=settings.redis.password,
+                decode_responses=settings.redis.decode_responses,
+                history_limit=settings.chat_history_limit,
+                history_ttl_seconds=settings.chat_history_ttl_seconds,
+            )
+        except Exception:
+            logger.warning("Redis unavailable. Falling back to in-memory chat service.", exc_info=True)
+    return ChatService(history_limit=settings.chat_history_limit)

@@ -54,6 +54,17 @@ For PRs:
 The parent POM defines `dev` and `local` profiles. Use them for environment-specific overrides when needed (e.g.,
 `mvn -Pdev test`).
 
+## Dependency & Deployment Notes
+
+- When adding new runtime components or protocols, update the actual deployment dependency files, not only local
+  environment exports. For the Python Docker backend, `py/Dockerfile` installs from `py/requirements.txt`; packages
+  listed only in `py/ai.yaml` are not included in the deployed image.
+- Pay special attention to optional runtime extras required by new components. For example, FastAPI WebSocket routes
+  served by Uvicorn require `uvicorn[standard]`, `websockets`, or `wsproto`; otherwise upgrade requests can be logged as
+  unsupported and handled as plain HTTP requests.
+- After introducing frontend features that depend on backend protocols such as WebSocket or SSE, verify both the
+  browser request and the container logs in the deployed environment.
+
 ## Skill Routing
 
 Use the local skills under `skills/` when the request clearly matches one of the workflows below. Prefer the most

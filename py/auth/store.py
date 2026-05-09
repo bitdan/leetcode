@@ -6,7 +6,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 import redis
+from auth.db_models import SysUser
 from auth.schemas import User, UserInfo
+from db.session import create_session_factory, session_scope
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -275,111 +278,60 @@ class RedisUserRepository(UserRepository):
         )
 
 
-class PostgresUserRepository(UserRepository):
+class SqlAlchemyUserRepository(UserRepository):
     def __init__(self, postgres_dsn: str, jwt_handler):
         self.jwt_handler = jwt_handler
-        try:
-            from psycopg2.extras import Json, RealDictCursor
-            from psycopg2.pool import SimpleConnectionPool
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("缺少 psycopg2-binary，请先安装 py/requirements.txt 中的依赖") from exc
-
-        self._json_adapter = Json
-        self.pool = SimpleConnectionPool(
-            minconn=1,
-            maxconn=5,
-            dsn=postgres_dsn,
-            cursor_factory=RealDictCursor,
-            connect_timeout=5,
-        )
+        self.session_factory = create_session_factory(postgres_dsn)
         self._ensure_default_admin()
 
     def exists(self, username: str) -> bool:
-        with self._cursor() as cursor:
-            cursor.execute(
-                "SELECT 1 FROM sys_users WHERE username = %s AND status <> 'deleted' LIMIT 1",
-                (username,),
-            )
-            return cursor.fetchone() is not None
+        with session_scope(self.session_factory) as session:
+            return session.scalar(
+                select(SysUser.id).where(SysUser.username == username, SysUser.status != "deleted").limit(1)
+            ) is not None
 
     def get_by_username(self, username: str) -> Optional[UserRecord]:
-        with self._cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT user_id, username, password_hash, email, avatar, roles, permissions, created_at, updated_at
-                FROM sys_users
-                WHERE username = %s AND status = 'active'
-                """,
-                (username,),
-            )
-            row = cursor.fetchone()
-            return self._deserialize(row) if row else None
+        with session_scope(self.session_factory) as session:
+            user = session.scalar(select(SysUser).where(SysUser.username == username, SysUser.status == "active"))
+            return self._deserialize(user) if user else None
 
     def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:
-        with self._cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT user_id, username, password_hash, email, avatar, roles, permissions, created_at, updated_at
-                FROM sys_users
-                WHERE user_id = %s AND status = 'active'
-                """,
-                (user_id,),
-            )
-            row = cursor.fetchone()
-            return self._deserialize(row) if row else None
+        with session_scope(self.session_factory) as session:
+            user = session.scalar(select(SysUser).where(SysUser.user_id == user_id, SysUser.status == "active"))
+            return self._deserialize(user) if user else None
 
     def save(self, record: UserRecord) -> UserRecord:
-        with self._cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO sys_users (
-                    user_id, username, password_hash, email, avatar, roles, permissions, created_at, updated_at
+        with session_scope(self.session_factory) as session:
+            session.add(
+                SysUser(
+                    user_id=record.user_id,
+                    username=record.username,
+                    password_hash=record.password_hash,
+                    email=record.email,
+                    avatar=record.avatar,
+                    roles=list(record.roles),
+                    permissions=list(record.permissions),
+                    created_at=datetime.fromisoformat(record.created_at),
+                    updated_at=datetime.fromisoformat(record.updated_at),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::timestamptz, %s::timestamptz)
-                """,
-                (
-                    record.user_id,
-                    record.username,
-                    record.password_hash,
-                    record.email,
-                    record.avatar,
-                    self._json_adapter(record.roles),
-                    self._json_adapter(record.permissions),
-                    record.created_at,
-                    record.updated_at,
-                ),
             )
         return record
 
     def update(self, record: UserRecord) -> UserRecord:
-        with self._cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE sys_users
-                SET username = %s,
-                    password_hash = %s,
-                    email = %s,
-                    avatar = %s,
-                    roles = %s,
-                    permissions = %s,
-                    updated_at = %s::timestamptz
-                WHERE user_id = %s AND status = 'active'
-                """,
-                (
-                    record.username,
-                    record.password_hash,
-                    record.email,
-                    record.avatar,
-                    self._json_adapter(record.roles),
-                    self._json_adapter(record.permissions),
-                    record.updated_at,
-                    record.user_id,
-                ),
-            )
+        with session_scope(self.session_factory) as session:
+            user = session.scalar(select(SysUser).where(SysUser.user_id == record.user_id, SysUser.status == "active"))
+            if user:
+                user.username = record.username
+                user.password_hash = record.password_hash
+                user.email = record.email
+                user.avatar = record.avatar
+                user.roles = list(record.roles)
+                user.permissions = list(record.permissions)
+                user.updated_at = datetime.fromisoformat(record.updated_at)
         return record
 
     def close(self) -> None:
-        self.pool.closeall()
+        self.session_factory.kw["bind"].dispose()
 
     def _ensure_default_admin(self) -> None:
         if self.exists("admin"):
@@ -399,53 +351,27 @@ class PostgresUserRepository(UserRepository):
             )
         )
 
-    def _cursor(self):
-        return _PostgresCursorContext(self.pool)
-
-    def _deserialize(self, data: Dict[str, Any]) -> UserRecord:
+    def _deserialize(self, user: SysUser) -> UserRecord:
         return UserRecord(
-            user_id=data["user_id"],
-            username=data["username"],
-            password_hash=data["password_hash"],
-            email=data.get("email"),
-            avatar=data.get("avatar"),
-            roles=list(data.get("roles") or []),
-            permissions=list(data.get("permissions") or []),
-            created_at=self._datetime_to_iso(data["created_at"]),
-            updated_at=self._datetime_to_iso(data["updated_at"]),
+            user_id=user.user_id,
+            username=user.username,
+            password_hash=user.password_hash,
+            email=user.email,
+            avatar=user.avatar,
+            roles=list(user.roles or []),
+            permissions=list(user.permissions or []),
+            created_at=self._datetime_to_iso(user.created_at),
+            updated_at=self._datetime_to_iso(user.updated_at),
         )
 
     def _datetime_to_iso(self, value: Any) -> str:
         return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
-class _PostgresCursorContext:
-    def __init__(self, pool):
-        self.pool = pool
-        self.connection = None
-        self.cursor = None
-
-    def __enter__(self):
-        self.connection = self.pool.getconn()
-        self.cursor = self.connection.cursor()
-        return self.cursor
-
-    def __exit__(self, exc_type, exc, traceback):
-        try:
-            if exc_type:
-                self.connection.rollback()
-            else:
-                self.connection.commit()
-        finally:
-            self.cursor.close()
-            self.pool.putconn(self.connection)
-        return False
-
-
 def create_user_repository(settings, jwt_handler) -> UserRepository:
     if getattr(settings, "use_postgres_user_store", True) and getattr(settings, "postgres_dsn", ""):
         try:
-            return PostgresUserRepository(
+            return SqlAlchemyUserRepository(
                 postgres_dsn=settings.postgres_dsn,
                 jwt_handler=jwt_handler,
             )

@@ -90,7 +90,11 @@ The `py/` app is a FastAPI backend assembled in `py/app.py` through a dependency
 
 PostgreSQL is the preferred persistent store for new Tool Hub business features that need durable relational data.
 
-- Put schema files in `py/` with clear names, such as `py/posts_schema.sql`.
+- Use SQLAlchemy 2.0 ORM for Python backend persistence and Alembic for schema migrations.
+- Keep shared SQLAlchemy infrastructure under `py/db/`, ORM models under each domain module, and migrations under
+  `py/alembic/versions`.
+- Prefer Alembic revisions for schema changes. Raw SQL files under `py/sql/` may be kept as bootstrap/reference scripts,
+  but deployed schema evolution should go through Alembic.
 - Use table names prefixed by the feature domain. For the post feature, use `post_` tables such as `post_posts`,
   `post_comments`, and `post_likes`.
 - Use `sys_` table names for authentication, users, roles, permissions, and other system-level account data, such as
@@ -104,7 +108,8 @@ PostgreSQL is the preferred persistent store for new Tool Hub business features 
 - In Docker Compose, services on `linger-net` should connect to PostgreSQL by container name, for example
   `postgres-db:5432`, not by public IP.
 - When adding or changing deployed database requirements, update both the SQL schema file and any Docker/runtime
-  configuration needed to reach the database.
+  configuration needed to reach the database. If Alembic is active for that schema, update or add an Alembic revision
+  instead of relying only on a raw SQL file.
 
 ## Dependency & Deployment Notes
 

@@ -36,22 +36,6 @@ services:
       retries: 3
       start_period: 40s
 
-  postgres:
-    image: postgres:17
-    container_name: postgres-db
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: dudu0.0@
-      POSTGRES_DB: tool_hub
-      TZ: Asia/Shanghai
-    ports:
-      - "5432:5432"
-    volumes:
-      - /docker/pgsql/data/:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - linger-net
-
 networks:
   linger-net:
     external: true

@@ -11,6 +11,8 @@ from chat.service import ChatService, RedisChatService
 from core.settings import Settings
 from game.service import GameService
 from mcp_server.registry import create_default_tool_registry
+from post.service import PostService
+from post.store import PostStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class Container:
     totp_service: TotpService
     game_service: GameService
     chat_service: ChatService
+    post_service: PostService
     agent_chat_service: AgentChatService
     mcp_tool_registry: dict
 
@@ -66,6 +69,7 @@ def build_container(settings: Settings) -> Container:
         totp_service=totp_service,
         game_service=GameService(),
         chat_service=create_chat_service(settings),
+        post_service=PostService(PostStore(settings.postgres_dsn)),
         agent_chat_service=AgentChatService(),
         mcp_tool_registry=create_default_tool_registry(),
     )

@@ -11,6 +11,7 @@ from core.logging import configure_logging, register_request_logging
 from core.settings import get_settings
 from game.routes import create_router as create_game_router
 from mcp_server.server import create_router as create_mcp_router
+from post.routes import create_router as create_post_router
 
 
 def create_app() -> FastAPI:
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
             yield
         finally:
             await container.chat_service.stop()
+            container.post_service.close()
 
     app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
     app.state.container = container
@@ -43,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(create_game_router(container))
     app.include_router(create_chat_router(container))
+    app.include_router(create_post_router(container))
     app.include_router(create_agent_chat_router(container))
     app.include_router(create_mcp_router(container))
 

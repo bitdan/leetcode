@@ -37,6 +37,7 @@ class Settings:
     use_redis_chat: bool
     chat_history_limit: int
     chat_history_ttl_seconds: int
+    postgres_dsn: str
 
 
 def _split_csv(value: str, default: List[str]) -> List[str]:
@@ -77,6 +78,7 @@ def get_settings() -> Settings:
         use_redis_chat=os.getenv("USE_REDIS_CHAT", "true").lower() == "true",
         chat_history_limit=int(os.getenv("CHAT_HISTORY_LIMIT", "100")),
         chat_history_ttl_seconds=int(os.getenv("CHAT_HISTORY_TTL_SECONDS", str(7 * 24 * 60 * 60))),
+        postgres_dsn=os.getenv("POSTGRES_DSN", ""),
     )
 
 

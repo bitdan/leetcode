@@ -23,6 +23,11 @@ class UserService:
     def validate_captcha(self, code: str, uuid_value: str) -> bool:
         return len(code.strip()) > 0 and len(uuid_value.strip()) > 0
 
+    def close(self) -> None:
+        close = getattr(self.user_repository, "close", None)
+        if callable(close):
+            close()
+
     def register_user(self, user_data: UserCreate) -> Optional[User]:
         if not self.validate_captcha(user_data.code, user_data.uuid):
             raise ValueError("验证码错误")

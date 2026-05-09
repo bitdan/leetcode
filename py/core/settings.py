@@ -35,6 +35,7 @@ class Settings:
     use_redis_sessions: bool
     use_redis_user_store: bool
     use_redis_chat: bool
+    use_postgres_user_store: bool
     chat_history_limit: int
     chat_history_ttl_seconds: int
     postgres_dsn: str
@@ -76,6 +77,7 @@ def get_settings() -> Settings:
         use_redis_sessions=os.getenv("USE_REDIS_SESSIONS", "true").lower() == "true",
         use_redis_user_store=os.getenv("USE_REDIS_USER_STORE", "true").lower() == "true",
         use_redis_chat=os.getenv("USE_REDIS_CHAT", "true").lower() == "true",
+        use_postgres_user_store=os.getenv("USE_POSTGRES_USER_STORE", "true").lower() == "true",
         chat_history_limit=int(os.getenv("CHAT_HISTORY_LIMIT", "100")),
         chat_history_ttl_seconds=int(os.getenv("CHAT_HISTORY_TTL_SECONDS", str(7 * 24 * 60 * 60))),
         postgres_dsn=os.getenv("POSTGRES_DSN", ""),

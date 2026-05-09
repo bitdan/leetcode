@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
             yield
         finally:
             await container.chat_service.stop()
+            container.user_service.close()
             container.post_service.close()
 
     app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)

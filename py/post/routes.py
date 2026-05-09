@@ -3,7 +3,7 @@ import logging
 from auth.routes import AUTH_COOKIE_NAME
 from auth.schemas import ApiResponse, UserInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from post.schemas import PostCreateRequest, PostListData, PostUpdateRequest
+from post.schemas import PostCommentCreateRequest, PostCreateRequest, PostListData, PostUpdateRequest
 from post.store import PostStoreUnavailable
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,30 @@ def create_router(container) -> APIRouter:
             return ApiResponse(code=200, msg="获取帖子成功", data=dump_model(data))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except PostStoreUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    @router.get("/{post_id}/comments", response_model=ApiResponse)
+    async def list_comments(post_id: str, current_user: UserInfo = Depends(get_optional_user)):
+        try:
+            data = [dump_model(item) for item in post_service.list_comments(post_id, current_user=current_user)]
+            return ApiResponse(code=200, msg="获取回复成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except PostStoreUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    @router.post("/{post_id}/comments", response_model=ApiResponse)
+    async def create_comment(
+            post_id: str,
+            payload: PostCommentCreateRequest,
+            current_user: UserInfo = Depends(get_current_user),
+    ):
+        try:
+            data = post_service.create_comment(post_id, payload.content, current_user, parent_id=payload.parent_id)
+            return ApiResponse(code=200, msg="回复成功", data=dump_model(data))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except PostStoreUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 

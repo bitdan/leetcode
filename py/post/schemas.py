@@ -14,6 +14,11 @@ class PostUpdateRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=20000)
 
 
+class PostCommentCreateRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=5000)
+    parent_id: Optional[str] = None
+
+
 class PostItem(BaseModel):
     id: str
     title: str
@@ -33,3 +38,16 @@ class PostListData(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PostCommentItem(BaseModel):
+    id: str
+    post_id: str
+    parent_id: Optional[str] = None
+    author_id: str
+    author_name: str
+    reply_to_author_name: Optional[str] = None
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    can_edit: bool = False

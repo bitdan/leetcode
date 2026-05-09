@@ -29,12 +29,15 @@ class PostComment(Base):
     __tablename__ = "post_comments"
     __table_args__ = (
         Index("idx_post_comments_post", "post_id", "created_at"),
+        Index("idx_post_comments_parent", "parent_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     post_id: Mapped[str] = mapped_column(String(64), ForeignKey("post_posts.id", ondelete="CASCADE"), nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("post_comments.id", ondelete="CASCADE"))
     author_id: Mapped[str] = mapped_column(String(128), nullable=False)
     author_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    reply_to_author_name: Mapped[str | None] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'published'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))

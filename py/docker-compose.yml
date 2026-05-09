@@ -25,6 +25,7 @@ services:
       - USE_REDIS_CHAT=true
       - CHAT_HISTORY_LIMIT=0
       - CHAT_HISTORY_TTL_SECONDS=604800
+      - POSTGRES_DSN=postgresql://root:dudu0.0%40@postgres-db:5432/tool_hub
     restart: unless-stopped
     networks:
       - linger-net
@@ -34,6 +35,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  postgres:
+    image: postgres:17
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: dudu0.0@
+      POSTGRES_DB: tool_hub
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - /docker/pgsql/data/:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - linger-net
 
 networks:
   linger-net:

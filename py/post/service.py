@@ -12,10 +12,41 @@ class PostService:
     def close(self) -> None:
         self.store.close()
 
-    def list_posts(self, keyword: str, page: int, page_size: int, current_user: UserInfo = None) -> Tuple[
-        List[PostItem], int]:
-        records, total = self.store.list_posts(keyword=keyword.strip(), page=page, page_size=page_size)
+    def list_posts(
+            self,
+            keyword: str,
+            page: int,
+            page_size: int,
+            current_user: UserInfo = None,
+            category: str = "",
+            tag: str = "",
+    ) -> Tuple[List[PostItem], int]:
+        records, total = self.store.list_posts(
+            keyword=keyword.strip(),
+            category=category.strip(),
+            tag=tag.strip(),
+            page=page,
+            page_size=page_size,
+        )
         return [self._to_item(record, current_user=current_user, include_content=False) for record in records], total
+
+    def list_posts_filtered(
+            self,
+            keyword: str,
+            category: str,
+            tag: str,
+            page: int,
+            page_size: int,
+            current_user: UserInfo = None,
+    ) -> Tuple[List[PostItem], int]:
+        return self.list_posts(
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+            current_user=current_user,
+            category=category,
+            tag=tag,
+        )
 
     def get_post(self, post_id: str, current_user: UserInfo = None) -> PostItem:
         record = self.store.get_post(post_id, increment_view=True)
@@ -23,27 +54,36 @@ class PostService:
             raise ValueError("帖子不存在")
         return self._to_item(record, current_user=current_user, include_content=True)
 
-    def create_post(self, title: str, content: str, current_user: UserInfo) -> PostItem:
+    def create_post(self, title: str, category: str, tags: List[str], content: str, current_user: UserInfo) -> PostItem:
         title = title.strip()
+        category = category.strip()
         content = content.strip()
-        if not title or not content:
-            raise ValueError("标题和正文不能为空")
+        normalized_tags = self._normalize_tags(tags)
+        if not title or not category or not content:
+            raise ValueError("标题、分类和正文不能为空")
         record = self.store.create_post(
             title=title,
+            category=category,
+            tags=normalized_tags,
             content=content,
             author_id=current_user.user.user_id,
             author_name=current_user.user.username,
         )
         return self._to_item(record, current_user=current_user, include_content=True)
 
-    def update_post(self, post_id: str, title: str, content: str, current_user: UserInfo) -> PostItem:
+    def update_post(self, post_id: str, title: str, category: str, tags: List[str], content: str,
+                    current_user: UserInfo) -> PostItem:
         title = title.strip()
+        category = category.strip()
         content = content.strip()
-        if not title or not content:
-            raise ValueError("标题和正文不能为空")
+        normalized_tags = self._normalize_tags(tags)
+        if not title or not category or not content:
+            raise ValueError("标题、分类和正文不能为空")
         record = self.store.update_post(
             post_id=post_id,
             title=title,
+            category=category,
+            tags=normalized_tags,
             content=content,
             author_id=current_user.user.user_id,
         )
@@ -83,6 +123,8 @@ class PostService:
         return PostItem(
             id=record.id,
             title=record.title,
+            category=record.category,
+            tags=record.tags,
             content=record.content if include_content else self._excerpt(record.content),
             author_id=record.author_id,
             author_name=record.author_name,
@@ -93,6 +135,23 @@ class PostService:
             updated_at=record.updated_at,
             can_edit=bool(current_user and current_user.user.user_id == record.author_id),
         )
+
+    def _normalize_tags(self, tags: List[str]) -> List[str]:
+        normalized = []
+        seen = set()
+        for raw in tags or []:
+            tag = str(raw or "").strip()
+            if not tag:
+                continue
+            if len(tag) > 64:
+                raise ValueError("标签长度不能超过 64 个字符")
+            if tag in seen:
+                continue
+            seen.add(tag)
+            normalized.append(tag)
+        if len(normalized) > 8:
+            raise ValueError("标签最多 8 个")
+        return normalized
 
     def _excerpt(self, content: str) -> str:
         compact = " ".join(content.split())

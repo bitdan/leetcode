@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS post_posts
 (
     id            VARCHAR(64) PRIMARY KEY,
     title         VARCHAR(120) NOT NULL,
+    category      VARCHAR(64)  NOT NULL DEFAULT '经验分享',
     content       TEXT         NOT NULL,
     author_id     VARCHAR(128) NOT NULL,
     author_name   VARCHAR(128) NOT NULL,
@@ -32,6 +33,9 @@ CREATE INDEX IF NOT EXISTS idx_post_posts_status_created
 
 CREATE INDEX IF NOT EXISTS idx_post_posts_author
     ON post_posts (author_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_post_posts_category_created
+    ON post_posts (category, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_post_posts_search
     ON post_posts
@@ -63,3 +67,17 @@ CREATE TABLE IF NOT EXISTS post_likes
 
 CREATE INDEX IF NOT EXISTS idx_post_likes_user
     ON post_likes (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS post_post_tags
+(
+    id BIGSERIAL PRIMARY KEY,
+    post_id  VARCHAR(64) NOT NULL REFERENCES post_posts (id) ON DELETE CASCADE,
+    tag_name VARCHAR(64) NOT NULL,
+    CONSTRAINT uq_post_post_tags_post_tag UNIQUE (post_id, tag_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_post_tags_post
+    ON post_post_tags (post_id);
+
+CREATE INDEX IF NOT EXISTS idx_post_post_tags_tag
+    ON post_post_tags (tag_name);

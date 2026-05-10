@@ -14,6 +14,7 @@ class Post(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'经验分享'"))
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author_id: Mapped[str] = mapped_column(String(128), nullable=False)
     author_name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -55,3 +56,16 @@ class PostLike(Base):
     post_id: Mapped[str] = mapped_column(String(64), ForeignKey("post_posts.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+
+class PostTag(Base):
+    __tablename__ = "post_post_tags"
+    __table_args__ = (
+        UniqueConstraint("post_id", "tag_name", name="uq_post_post_tags_post_tag"),
+        Index("idx_post_post_tags_post", "post_id"),
+        Index("idx_post_post_tags_tag", "tag_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    post_id: Mapped[str] = mapped_column(String(64), ForeignKey("post_posts.id", ondelete="CASCADE"), nullable=False)
+    tag_name: Mapped[str] = mapped_column(String(64), nullable=False)

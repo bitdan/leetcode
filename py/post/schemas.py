@@ -6,11 +6,15 @@ from pydantic import BaseModel, Field
 
 class PostCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=120)
+    category: str = Field(default="经验分享", min_length=1, max_length=64)
+    tags: List[str] = Field(default_factory=list)
     content: str = Field(..., min_length=1, max_length=20000)
 
 
 class PostUpdateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=120)
+    category: str = Field(default="经验分享", min_length=1, max_length=64)
+    tags: List[str] = Field(default_factory=list)
     content: str = Field(..., min_length=1, max_length=20000)
 
 
@@ -22,6 +26,8 @@ class PostCommentCreateRequest(BaseModel):
 class PostItem(BaseModel):
     id: str
     title: str
+    category: str
+    tags: List[str] = Field(default_factory=list)
     content: Optional[str] = None
     author_id: str
     author_name: str

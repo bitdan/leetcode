@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 
 from db.session import create_session_factory, session_scope
-from post.db_models import Post, PostComment
-from sqlalchemy import func, or_, select
+from post.db_models import Post, PostComment, PostTag
+from sqlalchemy import delete, func, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 class PostRecord:
     id: str
     title: str
+    category: str
+    tags: List[str]
     content: str
     author_id: str
     author_name: str
@@ -59,13 +61,21 @@ class PostStore:
             return
         self.session_factory.kw["bind"].dispose()
 
-    def list_posts(self, keyword: str, page: int, page_size: int) -> Tuple[List[PostRecord], int]:
+    def list_posts(self, keyword: str, category: str, tag: str, page: int, page_size: int) -> Tuple[List[PostRecord], int]:
         self._ensure_available()
         offset = (page - 1) * page_size
         filters = [Post.status == "published"]
         if keyword:
             pattern = f"%{keyword}%"
             filters.append(or_(Post.title.ilike(pattern), Post.content.ilike(pattern)))
+        if category:
+            filters.append(Post.category == category)
+        if tag:
+            filters.append(
+                Post.id.in_(
+                    select(PostTag.post_id).where(PostTag.tag_name == tag)
+                )
+            )
 
         with session_scope(self.session_factory) as session:
             total = session.scalar(select(func.count()).select_from(Post).where(*filters)) or 0
@@ -76,7 +86,8 @@ class PostStore:
                 .limit(page_size)
                 .offset(offset)
             ).all()
-            return [self._build_record(post) for post in posts], int(total)
+            tag_map = self._load_tags_map(session, [post.id for post in posts])
+            return [self._build_record(post, tag_map.get(post.id, [])) for post in posts], int(total)
 
     def get_post(self, post_id: str, increment_view: bool = False) -> Optional[PostRecord]:
         self._ensure_available()
@@ -87,13 +98,23 @@ class PostStore:
             if increment_view:
                 post.view_count += 1
                 session.flush()
-            return self._build_record(post)
+            tags = self._load_tags_map(session, [post.id]).get(post.id, [])
+            return self._build_record(post, tags)
 
-    def create_post(self, title: str, content: str, author_id: str, author_name: str) -> PostRecord:
+    def create_post(
+            self,
+            title: str,
+            category: str,
+            tags: List[str],
+            content: str,
+            author_id: str,
+            author_name: str,
+    ) -> PostRecord:
         self._ensure_available()
         post = Post(
             id=f"post_{uuid.uuid4().hex}",
             title=title,
+            category=category,
             content=content,
             author_id=author_id,
             author_name=author_name,
@@ -101,10 +122,20 @@ class PostStore:
         with session_scope(self.session_factory) as session:
             session.add(post)
             session.flush()
+            self._replace_tags(session, post.id, tags)
+            session.flush()
             session.refresh(post)
-            return self._build_record(post)
+            return self._build_record(post, tags)
 
-    def update_post(self, post_id: str, title: str, content: str, author_id: str) -> Optional[PostRecord]:
+    def update_post(
+            self,
+            post_id: str,
+            title: str,
+            category: str,
+            tags: List[str],
+            content: str,
+            author_id: str,
+    ) -> Optional[PostRecord]:
         self._ensure_available()
         with session_scope(self.session_factory) as session:
             post = session.scalar(
@@ -113,11 +144,13 @@ class PostStore:
             if not post:
                 return None
             post.title = title
+            post.category = category
             post.content = content
             post.updated_at = datetime.now(post.updated_at.tzinfo) if post.updated_at else datetime.now()
+            self._replace_tags(session, post.id, tags)
             session.flush()
             session.refresh(post)
-            return self._build_record(post)
+            return self._build_record(post, tags)
 
     def delete_post(self, post_id: str, author_id: str) -> bool:
         self._ensure_available()
@@ -184,10 +217,12 @@ class PostStore:
         if not self.session_factory:
             raise PostStoreUnavailable(self.unavailable_reason or "POSTGRES_DSN 未配置，发帖功能暂不可用")
 
-    def _build_record(self, post: Post) -> PostRecord:
+    def _build_record(self, post: Post, tags: List[str]) -> PostRecord:
         return PostRecord(
             id=post.id,
             title=post.title,
+            category=post.category,
+            tags=tags,
             content=post.content,
             author_id=post.author_id,
             author_name=post.author_name,
@@ -197,6 +232,25 @@ class PostStore:
             created_at=post.created_at,
             updated_at=post.updated_at,
         )
+
+    def _load_tags_map(self, session, post_ids: List[str]) -> dict:
+        if not post_ids:
+            return {}
+        rows = session.execute(
+            select(PostTag.post_id, PostTag.tag_name)
+            .where(PostTag.post_id.in_(post_ids))
+            .order_by(PostTag.id.asc())
+        ).all()
+        tag_map = {post_id: [] for post_id in post_ids}
+        for post_id, tag_name in rows:
+            tag_map.setdefault(post_id, []).append(tag_name)
+        return tag_map
+
+    def _replace_tags(self, session, post_id: str, tags: List[str]) -> None:
+        session.execute(delete(PostTag).where(PostTag.post_id == post_id))
+        if not tags:
+            return
+        session.add_all([PostTag(post_id=post_id, tag_name=tag_name) for tag_name in tags])
 
     def _build_comment_record(self, comment: PostComment) -> PostCommentRecord:
         return PostCommentRecord(

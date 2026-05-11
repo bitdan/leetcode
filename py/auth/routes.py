@@ -87,6 +87,11 @@ def create_router(container) -> APIRouter:
         data = current_user.model_dump(mode="json") if hasattr(current_user, "model_dump") else current_user.dict()
         return ApiResponse(code=200, msg="获取用户信息成功", data=data)
 
+    @router.get("/profile/login-stats", response_model=ApiResponse)
+    async def get_login_stats(current_user: UserInfo = Depends(get_current_user)):
+        data = user_service.get_login_stats(current_user.user.user_id)
+        return ApiResponse(code=200, msg="获取登录统计成功", data=data)
+
     @router.put("/profile", response_model=ApiResponse)
     async def update_profile(payload: UserProfileUpdate, current_user: UserInfo = Depends(get_current_user)):
         try:

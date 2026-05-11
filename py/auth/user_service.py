@@ -104,8 +104,12 @@ class UserService:
     def create_user_session(self, user: User) -> str:
         token = self.jwt_handler.create_access_token({"sub": user.user_id, "username": user.username})
         self.session_store.set_token(user.user_id, token)
+        self.session_store.record_login_day(user.user_id)
         self._refresh_session_user_info(user.user_id)
         return token
+
+    def get_login_stats(self, user_id: str) -> dict:
+        return self.session_store.get_login_stats(user_id)
 
     def _refresh_session_user_info(self, user_id: str) -> UserInfo:
         user_info = self.get_user_info(user_id)

@@ -2,7 +2,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional
 
 import redis
@@ -78,11 +78,33 @@ class SessionStore(ABC):
     def check_token_valid(self, user_id: str) -> bool:
         raise NotImplementedError
 
+    def record_login_day(self, user_id: str, login_date: Optional[date] = None) -> bool:
+        return False
+
+    def get_login_stats(self, user_id: str, today: Optional[date] = None, recent_days: int = 30) -> Dict[str, Any]:
+        return build_empty_login_stats(today or date.today(), recent_days)
+
+
+def build_empty_login_stats(today: date, recent_days: int = 30) -> Dict[str, Any]:
+    return {
+        "today": today.isoformat(),
+        "logged_today": False,
+        "current_year_active_days": 0,
+        "current_month_active_days": 0,
+        "recent_30_days_active_days": 0,
+        "consecutive_days": 0,
+        "recent_days": [
+            {"date": (today - timedelta(days=offset)).isoformat(), "logged": False}
+            for offset in range(recent_days - 1, -1, -1)
+        ],
+    }
+
 
 class MemorySessionStore(SessionStore):
     def __init__(self):
         self.tokens: Dict[str, str] = {}
         self.user_info: Dict[str, Dict[str, Any]] = {}
+        self.login_days: Dict[str, set] = {}
 
     def set_token(self, user_id: str, token: str) -> bool:
         self.tokens[user_id] = token
@@ -108,6 +130,31 @@ class MemorySessionStore(SessionStore):
 
     def check_token_valid(self, user_id: str) -> bool:
         return user_id in self.tokens
+
+    def record_login_day(self, user_id: str, login_date: Optional[date] = None) -> bool:
+        day = login_date or date.today()
+        self.login_days.setdefault(user_id, set()).add(day)
+        return True
+
+    def get_login_stats(self, user_id: str, today: Optional[date] = None, recent_days: int = 30) -> Dict[str, Any]:
+        day = today or date.today()
+        days = self.login_days.get(user_id, set())
+        recent = [day - timedelta(days=offset) for offset in range(recent_days - 1, -1, -1)]
+        month_days = {item for item in days if item.year == day.year and item.month == day.month}
+        consecutive = 0
+        cursor = day
+        while cursor in days:
+            consecutive += 1
+            cursor -= timedelta(days=1)
+        return {
+            "today": day.isoformat(),
+            "logged_today": day in days,
+            "current_year_active_days": len({item for item in days if item.year == day.year}),
+            "current_month_active_days": len(month_days),
+            "recent_30_days_active_days": len([item for item in recent if item in days]),
+            "consecutive_days": consecutive,
+            "recent_days": [{"date": item.isoformat(), "logged": item in days} for item in recent],
+        }
 
 
 class RedisSessionStore(SessionStore):
@@ -150,6 +197,47 @@ class RedisSessionStore(SessionStore):
 
     def check_token_valid(self, user_id: str) -> bool:
         return bool(self.redis_client.exists(f"token:{user_id}"))
+
+    def record_login_day(self, user_id: str, login_date: Optional[date] = None) -> bool:
+        day = login_date or date.today()
+        return bool(self.redis_client.setbit(self._login_bitmap_key(user_id, day.year), day.timetuple().tm_yday - 1, 1))
+
+    def get_login_stats(self, user_id: str, today: Optional[date] = None, recent_days: int = 30) -> Dict[str, Any]:
+        day = today or date.today()
+        recent = [day - timedelta(days=offset) for offset in range(recent_days - 1, -1, -1)]
+        recent_flags = [self._is_login_day(user_id, item) for item in recent]
+        month_active_days = sum(
+            1
+            for month_day in range(1, day.day + 1)
+            if self._is_login_day(user_id, date(day.year, day.month, month_day))
+        )
+
+        consecutive = 0
+        cursor = day
+        for _ in range(366):
+            if not self._is_login_day(user_id, cursor):
+                break
+            consecutive += 1
+            cursor -= timedelta(days=1)
+
+        return {
+            "today": day.isoformat(),
+            "logged_today": self._is_login_day(user_id, day),
+            "current_year_active_days": int(self.redis_client.bitcount(self._login_bitmap_key(user_id, day.year))),
+            "current_month_active_days": month_active_days,
+            "recent_30_days_active_days": sum(1 for flag in recent_flags if flag),
+            "consecutive_days": consecutive,
+            "recent_days": [
+                {"date": item.isoformat(), "logged": logged}
+                for item, logged in zip(recent, recent_flags)
+            ],
+        }
+
+    def _login_bitmap_key(self, user_id: str, year: int) -> str:
+        return f"auth:login:bitmap:{user_id}:{year}"
+
+    def _is_login_day(self, user_id: str, day: date) -> bool:
+        return bool(self.redis_client.getbit(self._login_bitmap_key(user_id, day.year), day.timetuple().tm_yday - 1))
 
 
 class InMemoryUserRepository(UserRepository):

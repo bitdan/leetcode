@@ -6,7 +6,8 @@ project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
 
 from agent_chat.service import AgentChatRequest, AgentChatResponse
-from agent_eval.schemas import AgentFeedbackRequest
+from agent_eval.schemas import AgentEvalCaseFromRunRequest, AgentEvalCaseRecord, AgentEvalRunRequest, \
+    AgentFeedbackRequest
 from agent_eval.service import AgentEvalService
 
 
@@ -15,6 +16,8 @@ class FakeAgentEvalStore:
         self.runs = []
         self.tool_calls = []
         self.feedback = []
+        self.cases = []
+        self.results = []
 
     def create_run(self, record):
         self.runs.append(record)
@@ -42,6 +45,25 @@ class FakeAgentEvalStore:
             "user_satisfaction": 4.5,
             "resolution_rate": 0.75,
         }
+
+    def create_case_from_run(self, payload):
+        self.cases.append(payload)
+        return "case_1"
+
+    def list_active_cases(self, route, limit):
+        return [
+                   AgentEvalCaseRecord(
+                       id="case_1",
+                       route="langgraph",
+                       name="demo",
+                       input_payload={"message": "hello", "history": []},
+                       expected_payload={"route": "langgraph", "must_include": ["ok"], "forbidden_terms": ["wrong"]},
+                   )
+               ][:limit]
+
+    def create_eval_result(self, record):
+        self.results.append(record)
+        return record.id
 
 
 class AgentEvalServiceTest(unittest.TestCase):
@@ -91,6 +113,32 @@ class AgentEvalServiceTest(unittest.TestCase):
         self.assertEqual(2, summary.total_runs)
         self.assertEqual(0.5, summary.tool_success_rate)
         self.assertEqual(0.1, summary.hallucination_rate)
+
+    def test_create_case_from_run_delegates_to_store(self):
+        store = FakeAgentEvalStore()
+        service = AgentEvalService(store)
+        case_id = service.create_case_from_run(AgentEvalCaseFromRunRequest(run_id="run_1"))
+        self.assertEqual("case_1", case_id)
+        self.assertEqual(1, len(store.cases))
+
+    def test_run_eval_cases_writes_results(self):
+        store = FakeAgentEvalStore()
+        service = AgentEvalService(store)
+
+        def chat_func(_request):
+            return AgentChatResponse(
+                route="langgraph",
+                title="通用工作流",
+                answer="ok",
+                structured_content={},
+            )
+
+        batch = service.run_eval_cases(AgentEvalRunRequest(limit=10), chat_func)
+
+        self.assertEqual(1, batch.total)
+        self.assertEqual(1, batch.passed)
+        self.assertEqual(1, len(store.results))
+        self.assertTrue(store.results[0].passed)
 
 
 if __name__ == "__main__":

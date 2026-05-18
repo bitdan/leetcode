@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,49 @@ class AgentFeedbackRequest(BaseModel):
     needs_human_takeover: bool = False
     hallucination_reported: bool = False
     feedback_text: Optional[str] = Field(default=None, max_length=2000)
+
+
+class AgentEvalCaseFromRunRequest(BaseModel):
+    run_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=200)
+    expected_payload: Optional[Dict[str, Any]] = None
+
+
+class AgentEvalRunRequest(BaseModel):
+    route: Optional[str] = None
+    limit: int = Field(default=20, ge=1, le=200)
+    prompt_version: Optional[str] = None
+
+
+class AgentEvalCaseRecord(BaseModel):
+    id: str
+    route: str
+    name: str
+    input_payload: Dict[str, Any]
+    expected_payload: Optional[Dict[str, Any]] = None
+    source_run_id: Optional[str] = None
+    status: str = "active"
+
+
+class AgentEvalResultRecord(BaseModel):
+    id: str
+    case_id: str
+    run_id: Optional[str] = None
+    prompt_version: str = "default"
+    route_score: float = 0
+    answer_score: float = 0
+    safety_score: float = 0
+    hallucination_score: float = 0
+    passed: bool = False
+    judge_reason: Optional[str] = None
+
+
+class AgentEvalBatchResult(BaseModel):
+    total: int = 0
+    passed: int = 0
+    failed: int = 0
+    results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class AgentEvalSummary(BaseModel):

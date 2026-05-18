@@ -2,8 +2,15 @@ import logging
 import uuid
 from typing import Optional
 
-from agent_eval.db_models import AgentFeedback, AgentRun, AgentToolCall
-from agent_eval.schemas import AgentFeedbackRequest, AgentRunRecord, AgentToolCallRecord
+from agent_eval.db_models import AgentEvalCase, AgentEvalResult, AgentFeedback, AgentRun, AgentToolCall
+from agent_eval.schemas import (
+    AgentEvalCaseFromRunRequest,
+    AgentEvalCaseRecord,
+    AgentEvalResultRecord,
+    AgentFeedbackRequest,
+    AgentRunRecord,
+    AgentToolCallRecord,
+)
 from db.session import create_session_factory, session_scope
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -78,6 +85,71 @@ class AgentEvalStore:
                     )
                 )
                 return feedback_id
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def create_case_from_run(self, payload: AgentEvalCaseFromRunRequest) -> str:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                run = self._find_run(session, payload.run_id, payload.trace_id)
+                if not run:
+                    raise ValueError("Agent run not found")
+                case_id = f"case_{uuid.uuid4().hex}"
+                expected_payload = payload.expected_payload or {
+                    "route": run.route,
+                    "must_include": [],
+                    "forbidden_terms": [],
+                }
+                session.add(
+                    AgentEvalCase(
+                        id=case_id,
+                        route=run.route,
+                        name=payload.name or self._default_case_name(run),
+                        input_payload={"message": run.input_text, "history": []},
+                        expected_payload=expected_payload,
+                        source_run_id=run.id,
+                        status="active",
+                    )
+                )
+                return case_id
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def list_active_cases(self, route: Optional[str], limit: int) -> list[AgentEvalCaseRecord]:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                filters = [AgentEvalCase.status == "active"]
+                if route:
+                    filters.append(AgentEvalCase.route == route)
+                cases = session.scalars(
+                    select(AgentEvalCase)
+                    .where(*filters)
+                    .order_by(AgentEvalCase.created_at.asc())
+                    .limit(limit)
+                ).all()
+                return [
+                    AgentEvalCaseRecord(
+                        id=item.id,
+                        route=item.route,
+                        name=item.name,
+                        input_payload=item.input_payload,
+                        expected_payload=item.expected_payload,
+                        source_run_id=item.source_run_id,
+                        status=item.status,
+                    )
+                    for item in cases
+                ]
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def create_eval_result(self, record: AgentEvalResultRecord) -> str:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                session.add(AgentEvalResult(**self._dump_model(record)))
+                return record.id
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 
@@ -172,6 +244,19 @@ class AgentEvalStore:
 
     def _dump_model(self, model) -> dict:
         return model.model_dump() if hasattr(model, "model_dump") else model.dict()
+
+    def _find_run(self, session, run_id: Optional[str], trace_id: Optional[str]):
+        if run_id:
+            return session.scalar(select(AgentRun).where(AgentRun.id == run_id))
+        if trace_id:
+            return session.scalar(select(AgentRun).where(AgentRun.trace_id == trace_id))
+        raise ValueError("run_id or trace_id is required")
+
+    def _default_case_name(self, run: AgentRun) -> str:
+        text = (run.input_text or "").strip().replace("\n", " ")
+        if len(text) > 80:
+            text = text[:77] + "..."
+        return text or f"{run.route} eval case"
 
     def _mark_unavailable(self, exc: SQLAlchemyError):
         logger.warning("Agent eval store unavailable after database error: %s", exc.__class__.__name__)

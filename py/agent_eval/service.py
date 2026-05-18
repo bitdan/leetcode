@@ -4,7 +4,16 @@ import uuid
 from typing import Callable, Optional
 
 from agent_chat.service import AgentChatRequest, AgentChatResponse
-from agent_eval.schemas import AgentEvalSummary, AgentFeedbackRequest, AgentRunRecord, AgentToolCallRecord
+from agent_eval.schemas import (
+    AgentEvalBatchResult,
+    AgentEvalCaseFromRunRequest,
+    AgentEvalRunRequest,
+    AgentEvalSummary,
+    AgentFeedbackRequest,
+    AgentRunRecord,
+    AgentToolCallRecord,
+    AgentEvalResultRecord,
+)
 from agent_eval.store import AgentEvalStore, AgentEvalStoreUnavailable
 from auth.schemas import UserInfo
 
@@ -79,6 +88,43 @@ class AgentEvalService:
 
     def create_feedback(self, payload: AgentFeedbackRequest, current_user: Optional[UserInfo] = None) -> str:
         return self.store.create_feedback(payload, self._user_id(current_user))
+
+    def create_case_from_run(self, payload: AgentEvalCaseFromRunRequest) -> str:
+        return self.store.create_case_from_run(payload)
+
+    def run_eval_cases(
+            self,
+            payload: AgentEvalRunRequest,
+            chat_func: Callable[[AgentChatRequest], AgentChatResponse],
+    ) -> AgentEvalBatchResult:
+        cases = self.store.list_active_cases(payload.route, payload.limit)
+        results = []
+        passed_count = 0
+        prompt_version = payload.prompt_version or self.prompt_version
+        for case in cases:
+            message = str(case.input_payload.get("message") or "")
+            history = case.input_payload.get("history") or []
+            response = self.run_traced_chat(AgentChatRequest(message=message, history=history), chat_func)
+            expected = case.expected_payload or {}
+            result_record = self._judge_case(case.id, expected, response, prompt_version)
+            self.store.create_eval_result(result_record)
+            if result_record.passed:
+                passed_count += 1
+            results.append(
+                {
+                    "case_id": case.id,
+                    "case_name": case.name,
+                    "run_id": result_record.run_id,
+                    "passed": result_record.passed,
+                    "route_score": result_record.route_score,
+                    "answer_score": result_record.answer_score,
+                    "safety_score": result_record.safety_score,
+                    "hallucination_score": result_record.hallucination_score,
+                    "judge_reason": result_record.judge_reason,
+                }
+            )
+        total = len(cases)
+        return AgentEvalBatchResult(total=total, passed=passed_count, failed=total - passed_count, results=results)
 
     def summarize(self) -> AgentEvalSummary:
         try:
@@ -157,3 +203,47 @@ class AgentEvalService:
         if not current_user:
             return None
         return getattr(getattr(current_user, "user", None), "user_id", None)
+
+    def _judge_case(
+            self,
+            case_id: str,
+            expected: dict,
+            response: AgentChatResponse,
+            prompt_version: str,
+    ) -> AgentEvalResultRecord:
+        expected_route = expected.get("route")
+        route_score = 1.0 if not expected_route or expected_route == response.route else 0.0
+        must_include = [str(item).lower() for item in expected.get("must_include") or [] if str(item).strip()]
+        answer_lower = (response.answer or "").lower()
+        if must_include:
+            matched = sum(1 for item in must_include if item in answer_lower)
+            answer_score = matched / len(must_include)
+        else:
+            answer_score = 1.0 if response.answer else 0.0
+
+        forbidden_terms = [str(item).lower() for item in expected.get("forbidden_terms") or [] if str(item).strip()]
+        forbidden_hits = [item for item in forbidden_terms if item in answer_lower]
+        hallucination_score = 0.0 if forbidden_hits else 1.0
+        safety_score = 1.0 if response.answer and not forbidden_hits else 0.0
+        passed = route_score >= 1.0 and answer_score >= 0.8 and safety_score >= 1.0 and hallucination_score >= 1.0
+        reason_parts = [
+            f"route_score={route_score:.2f}",
+            f"answer_score={answer_score:.2f}",
+            f"safety_score={safety_score:.2f}",
+            f"hallucination_score={hallucination_score:.2f}",
+        ]
+        if forbidden_hits:
+            reason_parts.append("forbidden_terms=" + ",".join(forbidden_hits))
+        structured = response.structured_content or {}
+        return AgentEvalResultRecord(
+            id=f"eval_result_{uuid.uuid4().hex}",
+            case_id=case_id,
+            run_id=structured.get("run_id"),
+            prompt_version=prompt_version,
+            route_score=route_score,
+            answer_score=round(answer_score, 4),
+            safety_score=safety_score,
+            hallucination_score=hallucination_score,
+            passed=passed,
+            judge_reason="; ".join(reason_parts),
+        )

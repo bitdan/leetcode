@@ -1,6 +1,6 @@
 import logging
 
-from agent_eval.schemas import AgentEvalSummary, AgentFeedbackRequest
+from agent_eval.schemas import AgentEvalCaseFromRunRequest, AgentEvalRunRequest, AgentEvalSummary, AgentFeedbackRequest
 from agent_eval.store import AgentEvalStoreUnavailable
 from auth.routes import AUTH_COOKIE_NAME
 from auth.schemas import ApiResponse
@@ -33,6 +33,36 @@ def create_router(container) -> APIRouter:
         except Exception as exc:
             logger.exception("Create agent feedback failed")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="反馈记录失败") from exc
+
+    @router.post("/cases/from-run", response_model=ApiResponse)
+    async def create_case_from_run(payload: AgentEvalCaseFromRunRequest) -> ApiResponse:
+        try:
+            case_id = eval_service.create_case_from_run(payload)
+            return ApiResponse(code=200, msg="评测用例已创建", data={"id": case_id})
+        except AgentEvalStoreUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            logger.exception("Create agent eval case failed")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="评测用例创建失败") from exc
+
+    @router.post("/runs", response_model=ApiResponse)
+    async def run_eval_cases(payload: AgentEvalRunRequest) -> ApiResponse:
+        try:
+            data = eval_service.run_eval_cases(payload, container.agent_chat_service.chat)
+            return ApiResponse(
+                code=200,
+                msg="Agent 评测执行完成",
+                data=data.model_dump() if hasattr(data, "model_dump") else data.dict(),
+            )
+        except AgentEvalStoreUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except Exception as exc:
+            logger.exception("Run agent eval cases failed")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Agent 评测执行失败") from exc
 
     @router.get("/summary", response_model=ApiResponse)
     async def summary() -> ApiResponse:

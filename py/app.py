@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_chat.routes import create_router as create_agent_chat_router
+from agent_eval.routes import create_router as create_agent_eval_router
 from auth.routes import create_router as create_auth_router
 from bootstrap import build_container
 from chat.routes import create_router as create_chat_router
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
             await container.chat_service.stop()
             container.user_service.close()
             container.post_service.close()
+            container.agent_eval_service.store.close()
 
     app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
     app.state.container = container
@@ -48,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(create_chat_router(container))
     app.include_router(create_post_router(container))
     app.include_router(create_agent_chat_router(container))
+    app.include_router(create_agent_eval_router(container))
     app.include_router(create_mcp_router(container))
 
     @app.get("/health")

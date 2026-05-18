@@ -111,6 +111,51 @@ PostgreSQL is the preferred persistent store for new Tool Hub business features 
   configuration needed to reach the database. If Alembic is active for that schema, update or add an Alembic revision
   instead of relying only on a raw SQL file.
 
+## Python Database Migration Commands
+
+Run Alembic migrations from the `py/` directory after adding or changing SQLAlchemy models.
+
+PowerShell local environment:
+
+```powershell
+cd py
+$env:POSTGRES_DSN="postgresql+psycopg2://user:password@localhost:5432/database"
+python -m alembic upgrade head
+```
+
+For the Agent evaluation tables added in revision `20260518_0004`, either migrate to the latest head:
+
+```powershell
+cd py
+python -m alembic upgrade head
+```
+
+or migrate directly to that revision:
+
+```powershell
+cd py
+python -m alembic upgrade 20260518_0004
+```
+
+Verify the applied revision:
+
+```powershell
+cd py
+python -m alembic current
+python -m alembic history --verbose
+```
+
+If running inside Docker Compose, execute Alembic in the Python API container with the deployed `POSTGRES_DSN`:
+
+```powershell
+docker compose exec langgraph-api python -m alembic upgrade head
+docker compose exec langgraph-api python -m alembic current
+```
+
+If the backend logs `Agent 评测表不可用，请先运行 Alembic 迁移`, the app can still answer Agent chat requests, but
+Agent metrics and feedback will not be persisted until the migration has created `agent_runs`, `agent_tool_calls`,
+`agent_feedback`, `agent_eval_cases`, and `agent_eval_results`.
+
 ## Dependency & Deployment Notes
 
 - When adding new runtime components or protocols, update the actual deployment dependency files, not only local

@@ -2,6 +2,8 @@ import logging
 from dataclasses import dataclass
 
 from agent_chat.service import AgentChatService
+from agent_eval.service import AgentEvalService
+from agent_eval.store import AgentEvalStore
 from auth.security import JWTHandler
 from auth.service import UserService
 from auth.store import MemorySessionStore, RedisSessionStore, create_user_repository
@@ -27,6 +29,7 @@ class Container:
     chat_service: ChatService
     post_service: PostService
     agent_chat_service: AgentChatService
+    agent_eval_service: AgentEvalService
     mcp_tool_registry: dict
 
 
@@ -71,6 +74,7 @@ def build_container(settings: Settings) -> Container:
         chat_service=create_chat_service(settings),
         post_service=PostService(PostStore(settings.postgres_dsn)),
         agent_chat_service=AgentChatService(),
+        agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn)),
         mcp_tool_registry=create_default_tool_registry(),
     )
 

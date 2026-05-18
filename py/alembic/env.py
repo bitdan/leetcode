@@ -1,12 +1,12 @@
 from logging.config import fileConfig
 
+import agent_eval.db_models  # noqa: F401
+import auth.db_models  # noqa: F401
+import post.db_models  # noqa: F401
 from alembic import context
 from core.settings import get_settings
 from db.base import Base
 from sqlalchemy import engine_from_config, pool
-
-import auth.db_models  # noqa: F401
-import post.db_models  # noqa: F401
 
 config = context.config
 

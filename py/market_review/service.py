@@ -1,3 +1,4 @@
+import logging
 import math
 import re
 from collections import defaultdict
@@ -13,6 +14,8 @@ from market_review.schemas import (
     SectorStrength,
 )
 from market_review.store import MarketReviewStore, MarketReviewStoreUnavailable
+
+logger = logging.getLogger(__name__)
 
 
 class MarketReviewUnavailable(RuntimeError):
@@ -254,11 +257,17 @@ class MarketReviewService:
             return None
         try:
             return self.store.get_review(normalized_date)
-        except MarketReviewStoreUnavailable:
+        except MarketReviewStoreUnavailable as exc:
+            logger.warning("Market review snapshot load skipped for %s: %s", normalized_date, exc)
             return None
 
     def _save_review(self, data: MarketReviewData) -> None:
         if not self.store or not self.store.is_available():
+            return
+        try:
+            self.store.save_review(data)
+        except MarketReviewStoreUnavailable as exc:
+            logger.warning("Market review snapshot save skipped for %s: %s", data.date, exc)
             return
 
     def _mark_failed(self, normalized_date: str, message: str) -> None:
@@ -267,20 +276,29 @@ class MarketReviewService:
         try:
             self.store.mark_failed(normalized_date, message)
         except Exception:
-            return
-        try:
-            self.store.save_review(data)
-        except MarketReviewStoreUnavailable:
+            logger.warning("Market review failure status save skipped for %s", normalized_date, exc_info=True)
             return
 
     def status(self, trading_date: Optional[str] = None) -> Optional[dict]:
         normalized_date = self._normalize_date(trading_date)
-        if not self.store or not self.store.is_available():
-            return None
+        if not self.store:
+            return {"date": normalized_date, "status": "store_missing"}
+        if not self.store.is_available():
+            return {
+                "date": normalized_date,
+                "status": "store_unavailable",
+                "error_message": self.store.unavailable_reason or "市场复盘存储不可用",
+            }
         try:
-            return self.store.status(normalized_date)
-        except MarketReviewStoreUnavailable:
-            return None
+            stored = self.store.status(normalized_date)
+            return stored or {"date": normalized_date, "status": "missing"}
+        except MarketReviewStoreUnavailable as exc:
+            logger.warning("Market review status lookup skipped for %s: %s", normalized_date, exc)
+            return {
+                "date": normalized_date,
+                "status": "store_unavailable",
+                "error_message": str(exc),
+            }
 
     def _prime_caches(self, normalized_date: str, data: MarketReviewData) -> None:
         self._review_cache[normalized_date] = (monotonic(), data)

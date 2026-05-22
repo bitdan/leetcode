@@ -12,6 +12,7 @@ from auth.totp_store import create_totp_store
 from chat.service import ChatService, RedisChatService
 from core.settings import Settings
 from game.service import GameService
+from market_review.service import MarketReviewService
 from mcp_server.registry import create_default_tool_registry
 from post.service import PostService
 from post.store import PostStore
@@ -28,6 +29,7 @@ class Container:
     game_service: GameService
     chat_service: ChatService
     post_service: PostService
+    market_review_service: MarketReviewService
     agent_chat_service: AgentChatService
     agent_eval_service: AgentEvalService
     mcp_tool_registry: dict
@@ -73,6 +75,7 @@ def build_container(settings: Settings) -> Container:
         game_service=GameService(),
         chat_service=create_chat_service(settings),
         post_service=PostService(PostStore(settings.postgres_dsn)),
+        market_review_service=MarketReviewService(),
         agent_chat_service=AgentChatService(),
         agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn)),
         mcp_tool_registry=create_default_tool_registry(),

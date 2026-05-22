@@ -4,8 +4,6 @@ from typing import Any, Dict, List, Literal, TypedDict
 from mcp_server.java_stacktrace import analyze_java_stacktrace
 from mcp_server.sql_generator import generate_nl_sql
 from pydantic import BaseModel, Field
-from skill_adapters.leetcode_coach import run_leetcode_coach
-from workflow_adapter.langgraph_workflow import execute_langgraph_workflow
 
 
 class AgentChatRequest(BaseModel):
@@ -76,6 +74,8 @@ class AgentChatService:
         return sum(1 for item in markers if item in lowered) >= 2
 
     def _handle_leetcode(self, text: str) -> Dict[str, Any]:
+        from skill_adapters.leetcode_coach import run_leetcode_coach
+
         return run_leetcode_coach(self._extract_leetcode_payload(text))
 
     def _extract_leetcode_payload(self, text: str) -> Dict[str, Any]:
@@ -181,6 +181,8 @@ class AgentChatService:
         return "\n\n".join(parts)
 
     def _handle_langgraph(self, text: str) -> Dict[str, Any]:
+        from workflow_adapter.langgraph_workflow import execute_langgraph_workflow
+
         return execute_langgraph_workflow(text)
 
     def _format_langgraph_answer(self, data: Dict[str, Any]) -> str:

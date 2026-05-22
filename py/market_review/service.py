@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from market_review.schemas import (
     CandidateStock,
     DivergenceConsensusSignal,
+    IntradayTradingSignal,
     LimitUpStock,
     MarketReviewData,
     SectorStrength,
@@ -310,25 +311,46 @@ class MarketReviewService:
             limit: int = 120,
             refresh: bool = False,
             name: str = "",
+            period: str = "day",
     ) -> StockKlineSnapshot:
         normalized_code = self._normalize_code(code)
         normalized_date = self._normalize_date(trading_date)
-        normalized_limit = max(30, min(limit, 240))
+        normalized_period = self._normalize_kline_period(period)
+        normalized_limit = max(16, min(limit, 240))
         bars: List[StockKlineBar] = []
 
-        if not refresh and self.store and self.store.is_available():
-            try:
-                bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
-            except MarketReviewStoreUnavailable as exc:
-                logger.warning("Market review kline load skipped for %s: %s", normalized_code, exc)
-
-        if not bars:
-            bars = self._fetch_stock_kline(normalized_code, normalized_date, normalized_limit)
-            if self.store and self.store.is_available():
+        if normalized_period == "day":
+            if not refresh and self.store and self.store.is_available():
                 try:
-                    self.store.save_stock_kline_daily(normalized_code, name, bars)
+                    bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
                 except MarketReviewStoreUnavailable as exc:
-                    logger.warning("Market review kline save skipped for %s: %s", normalized_code, exc)
+                    logger.warning("Market review daily kline load skipped for %s: %s", normalized_code, exc)
+
+            if not bars:
+                bars = self._fetch_stock_kline_daily(normalized_code, normalized_date, normalized_limit)
+                if self.store and self.store.is_available():
+                    try:
+                        self.store.save_stock_kline_daily(normalized_code, name, bars)
+                    except MarketReviewStoreUnavailable as exc:
+                        logger.warning("Market review daily kline save skipped for %s: %s", normalized_code, exc)
+        else:
+            if not refresh and self.store and self.store.is_available():
+                try:
+                    bars = self.store.get_stock_kline_intraday(normalized_code, normalized_period, normalized_date)
+                except MarketReviewStoreUnavailable as exc:
+                    logger.warning("Market review intraday kline load skipped for %s/%s: %s",
+                                   normalized_code, normalized_period, exc)
+
+            if not bars:
+                bars = self._fetch_stock_kline_intraday(normalized_code, normalized_date, normalized_period)
+                if self.store and self.store.is_available():
+                    try:
+                        self.store.save_stock_kline_intraday(
+                            normalized_code, name, normalized_period, normalized_date, bars
+                        )
+                    except MarketReviewStoreUnavailable as exc:
+                        logger.warning("Market review intraday kline save skipped for %s/%s: %s",
+                                       normalized_code, normalized_period, exc)
 
         display_name = name.strip()
         if not display_name and self.store and self.store.is_available():
@@ -338,14 +360,16 @@ class MarketReviewService:
                 logger.warning("Market review stock name load skipped for %s: %s", normalized_code, exc)
 
         enriched_bars = self._apply_kline_indicators(bars)
+        intraday_signals = self._build_intraday_signals(normalized_code, normalized_date, normalized_period, enriched_bars)
         return StockKlineSnapshot(
             code=normalized_code,
             name=display_name,
             date=normalized_date,
-            period="day",
+            period=normalized_period,
             bars=enriched_bars,
             summary=self._build_kline_summary(enriched_bars),
-            technical_tags=self._build_kline_tags(enriched_bars),
+            technical_tags=self._build_kline_tags(enriched_bars, normalized_period),
+            intraday_signals=intraday_signals,
         )
 
     def _prime_caches(self, normalized_date: str, data: MarketReviewData) -> None:
@@ -382,6 +406,25 @@ class MarketReviewService:
         if len(text) != 6:
             raise ValueError("股票代码应为 6 位数字")
         return text
+
+    @staticmethod
+    def _normalize_kline_period(value: str) -> str:
+        text = (value or "day").strip().lower()
+        mapping = {
+            "d": "day",
+            "day": "day",
+            "5": "5",
+            "5m": "5",
+            "15": "15",
+            "15m": "15",
+            "30": "30",
+            "30m": "30",
+            "60": "60",
+            "60m": "60",
+        }
+        if text not in mapping:
+            raise ValueError("K线周期仅支持 day、5、15、30、60")
+        return mapping[text]
 
     @staticmethod
     def _normalize_date(value: Optional[str]) -> str:
@@ -537,7 +580,7 @@ class MarketReviewService:
             return 0
         return min(math.log10(value + 1) * 1.8, cap)
 
-    def _fetch_stock_kline(self, code: str, normalized_date: str, limit: int) -> List[StockKlineBar]:
+    def _fetch_stock_kline_daily(self, code: str, normalized_date: str, limit: int) -> List[StockKlineBar]:
         ak = self._load_akshare()
         start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=limit * 3)).strftime("%Y%m%d")
         end_date = normalized_date.replace("-", "")
@@ -557,10 +600,46 @@ class MarketReviewService:
             raise MarketReviewUnavailable("未获取到个股 K 线数据")
         return bars[-limit:]
 
+    def _fetch_stock_kline_intraday(self, code: str, normalized_date: str, period: str) -> List[StockKlineBar]:
+        ak = self._load_akshare()
+        start_date = f"{normalized_date} 09:30:00"
+        end_date = f"{normalized_date} 15:00:00"
+        try:
+            frame = ak.stock_zh_a_hist_min_em(
+                symbol=code,
+                start_date=start_date,
+                end_date=end_date,
+                period=period,
+                adjust="qfq",
+            )
+        except Exception as exc:
+            raise MarketReviewUnavailable("AKShare 分钟K线数据暂不可用") from exc
+        rows = frame.to_dict(orient="records")
+        bars = [self._row_to_intraday_kline_bar(row) for row in rows]
+        if not bars:
+            raise MarketReviewUnavailable("未获取到分时 K 线数据")
+        return bars
+
     def _row_to_kline_bar(self, row: Dict[str, Any]) -> StockKlineBar:
         trade_date = self._normalize_hist_date(self._pick(row, "日期", "trade_date"))
         return StockKlineBar(
             trade_date=trade_date,
+            open_price=self._to_float(self._pick(row, "开盘", "open")) or 0,
+            close_price=self._to_float(self._pick(row, "收盘", "close")) or 0,
+            high_price=self._to_float(self._pick(row, "最高", "high")) or 0,
+            low_price=self._to_float(self._pick(row, "最低", "low")) or 0,
+            volume=self._to_float(self._pick(row, "成交量", "volume")) or 0,
+            amount=self._to_float(self._pick(row, "成交额", "amount")) or 0,
+            amplitude=self._to_float(self._pick(row, "振幅", "amplitude")),
+            change_amount=self._to_float(self._pick(row, "涨跌额", "change_amount")),
+            change_percent=self._to_float(self._pick(row, "涨跌幅", "change_percent")),
+            turnover_rate=self._to_float(self._pick(row, "换手率", "turnover_rate")),
+        )
+
+    def _row_to_intraday_kline_bar(self, row: Dict[str, Any]) -> StockKlineBar:
+        bar_time = self._normalize_intraday_datetime(self._pick(row, "时间", "日期", "datetime", "time"))
+        return StockKlineBar(
+            trade_date=bar_time,
             open_price=self._to_float(self._pick(row, "开盘", "open")) or 0,
             close_price=self._to_float(self._pick(row, "收盘", "close")) or 0,
             high_price=self._to_float(self._pick(row, "最高", "high")) or 0,
@@ -582,6 +661,16 @@ class MarketReviewService:
             except ValueError:
                 continue
         raise ValueError("无法解析 K 线日期")
+
+    @staticmethod
+    def _normalize_intraday_datetime(value: Any) -> str:
+        text = str(value).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+        raise ValueError("无法解析分时K线时间")
 
     def _apply_kline_indicators(self, bars: List[StockKlineBar]) -> List[StockKlineBar]:
         closes = [item.close_price for item in bars]
@@ -643,7 +732,7 @@ class MarketReviewService:
             ma60=latest.ma60,
         )
 
-    def _build_kline_tags(self, bars: List[StockKlineBar]) -> List[str]:
+    def _build_kline_tags(self, bars: List[StockKlineBar], period: str = "day") -> List[str]:
         if len(bars) < 2:
             return []
         latest = bars[-1]
@@ -676,4 +765,84 @@ class MarketReviewService:
             tags.append("阳线")
         elif latest.close_price < latest.open_price:
             tags.append("阴线")
+        if period != "day":
+            if latest.close_price >= latest.high_price * 0.997:
+                tags.append("收在高位")
+            if latest.low_price <= min(item.low_price for item in bars[:max(1, min(6, len(bars)))]):
+                tags.append("日内试探低点")
         return tags[:6]
+
+    def _build_intraday_signals(self, code: str, normalized_date: str, period: str,
+                                bars: List[StockKlineBar]) -> List[IntradayTradingSignal]:
+        if period == "day" or len(bars) < 3:
+            return []
+        previous_close = self._get_previous_close(code, normalized_date)
+        if previous_close <= 0:
+            return []
+        limit_up_price = self._compute_limit_up_price(code, previous_close)
+        intraday_low = min(item.low_price for item in bars)
+        latest = bars[-1]
+        signals: List[IntradayTradingSignal] = []
+
+        retreated = intraday_low <= previous_close * 0.985
+        recovered = latest.close_price >= previous_close * 1.01
+        late_strength = any(item.close_price >= previous_close * 1.015 for item in bars[-max(2, len(bars) // 4):])
+        if retreated and recovered and late_strength:
+            observed_bar = max(bars[-max(2, len(bars) // 4):], key=lambda item: item.close_price)
+            signals.append(IntradayTradingSignal(
+                signal_type="weak_to_strong",
+                title="弱转强",
+                phase="分时回拉",
+                signal_score=round(min(((latest.close_price / previous_close) - 1) * 1000, 92), 2),
+                observed_at=observed_bar.trade_date,
+                reasons=[
+                    "盘中回撤后重新站上昨收",
+                    "尾段收盘强于开盘",
+                ],
+                risks=["若次日低开则信号衰减"] if latest.close_price < latest.high_price * 0.995 else [],
+            ))
+
+        broke_limit = any(item.high_price >= limit_up_price * 0.999 for item in bars)
+        reseal_candidates = [
+            item for item in bars
+            if item.high_price >= limit_up_price * 0.999 and item.close_price >= limit_up_price * 0.997
+        ]
+        if broke_limit and reseal_candidates:
+            last_reseal = reseal_candidates[-1]
+            last_reseal.is_reseal_bar = True
+            last_reseal.is_breakout_bar = True
+            signals.append(IntradayTradingSignal(
+                signal_type="reseal",
+                title="回封确认",
+                phase="炸板回封",
+                signal_score=round(min(78 + len(reseal_candidates) * 4, 96), 2),
+                observed_at=last_reseal.trade_date,
+                reasons=[
+                    "盘中触及涨停价后再次收在涨停附近",
+                    f"{period}分钟级别出现回封K线",
+                ],
+                risks=["回封次数过多需防反复"] if len(reseal_candidates) >= 3 else [],
+            ))
+
+        return signals[:3]
+
+    def _get_previous_close(self, code: str, normalized_date: str) -> float:
+        try:
+            daily_bars = self._fetch_stock_kline_daily(code, normalized_date, 3)
+        except MarketReviewUnavailable:
+            return 0
+        if len(daily_bars) < 2:
+            return 0
+        target = normalized_date
+        previous_bars = [item for item in daily_bars if item.trade_date < target]
+        if not previous_bars:
+            return daily_bars[-2].close_price
+        return previous_bars[-1].close_price
+
+    @staticmethod
+    def _compute_limit_up_price(code: str, previous_close: float) -> float:
+        if code.startswith(("300", "301", "688")):
+            multiplier = 1.2
+        else:
+            multiplier = 1.1
+        return round(previous_close * multiplier, 2)

@@ -133,3 +133,32 @@ CREATE TABLE IF NOT EXISTS market_stock_kline_daily
 
 CREATE INDEX IF NOT EXISTS idx_market_stock_kline_daily_code_date
     ON market_stock_kline_daily (code, trade_date);
+
+CREATE TABLE IF NOT EXISTS market_stock_kline_intraday
+(
+    id BIGSERIAL PRIMARY KEY,
+    trade_date     DATE           NOT NULL,
+    bar_time       TIMESTAMP      NOT NULL,
+    code           VARCHAR(16)    NOT NULL,
+    period         VARCHAR(8)     NOT NULL,
+    name           VARCHAR(64)    NOT NULL DEFAULT '',
+    open_price     NUMERIC(18, 4) NOT NULL,
+    close_price    NUMERIC(18, 4) NOT NULL,
+    high_price     NUMERIC(18, 4) NOT NULL,
+    low_price      NUMERIC(18, 4) NOT NULL,
+    volume         NUMERIC(20, 2) NOT NULL DEFAULT 0,
+    amount         NUMERIC(20, 2) NOT NULL DEFAULT 0,
+    amplitude      NUMERIC(10, 4),
+    change_amount  NUMERIC(18, 4),
+    change_percent NUMERIC(10, 4),
+    turnover_rate  NUMERIC(10, 4),
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_market_stock_kline_intraday_time_code_period UNIQUE (bar_time, code, period)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_stock_kline_intraday_code_period_time
+    ON market_stock_kline_intraday (code, period, bar_time);
+CREATE INDEX IF NOT EXISTS idx_market_stock_kline_intraday_trade_date
+    ON market_stock_kline_intraday (trade_date, period);

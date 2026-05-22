@@ -86,6 +86,8 @@ class StockKlineBar(BaseModel):
     dif: Optional[float] = None
     dea: Optional[float] = None
     macd: Optional[float] = None
+    is_reseal_bar: bool = False
+    is_breakout_bar: bool = False
 
 
 class StockKlineSummary(BaseModel):
@@ -113,3 +115,17 @@ class StockKlineSnapshot(BaseModel):
     bars: List[StockKlineBar] = Field(default_factory=list)
     summary: Optional[StockKlineSummary] = None
     technical_tags: List[str] = Field(default_factory=list)
+    intraday_signals: List["IntradayTradingSignal"] = Field(default_factory=list)
+
+
+class IntradayTradingSignal(BaseModel):
+    signal_type: str
+    title: str
+    phase: str
+    signal_score: float
+    observed_at: str = ""
+    reasons: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+
+
+StockKlineSnapshot.model_rebuild()

@@ -10,6 +10,7 @@ from market_review.db_models import (
     MarketReviewSignal,
     MarketSectorStrength,
     MarketStockKlineDaily,
+    MarketStockKlineIntraday,
 )
 from market_review.schemas import (
     CandidateStock,
@@ -198,6 +199,42 @@ class MarketReviewStore:
                     )
                 )
                 session.add_all([self._kline_to_row(code, name, item) for item in bars])
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def get_stock_kline_intraday(self, code: str, period: str, trade_date: str) -> list[StockKlineBar]:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                rows = session.scalars(
+                    select(MarketStockKlineIntraday)
+                    .where(
+                        MarketStockKlineIntraday.code == code,
+                        MarketStockKlineIntraday.period == period,
+                        MarketStockKlineIntraday.trade_date == self._parse_date(trade_date),
+                    )
+                    .order_by(MarketStockKlineIntraday.bar_time.asc())
+                ).all()
+                return [self._intraday_from_row(item) for item in rows]
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def save_stock_kline_intraday(self, code: str, name: str, period: str, trade_date: str,
+                                  bars: list[StockKlineBar]) -> None:
+        self._ensure_available()
+        if not bars:
+            return
+        try:
+            with session_scope(self.session_factory) as session:
+                parsed_date = self._parse_date(trade_date)
+                session.execute(
+                    delete(MarketStockKlineIntraday).where(
+                        MarketStockKlineIntraday.code == code,
+                        MarketStockKlineIntraday.period == period,
+                        MarketStockKlineIntraday.trade_date == parsed_date,
+                    )
+                )
+                session.add_all([self._intraday_to_row(code, name, period, parsed_date, item) for item in bars])
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 
@@ -394,6 +431,42 @@ class MarketReviewStore:
         return MarketStockKlineDaily(
             trade_date=datetime.strptime(item.trade_date, "%Y-%m-%d").date(),
             code=code,
+            name=name,
+            open_price=item.open_price,
+            close_price=item.close_price,
+            high_price=item.high_price,
+            low_price=item.low_price,
+            volume=item.volume or 0,
+            amount=item.amount or 0,
+            amplitude=item.amplitude,
+            change_amount=item.change_amount,
+            change_percent=item.change_percent,
+            turnover_rate=item.turnover_rate,
+            raw_payload={},
+        )
+
+    def _intraday_from_row(self, row: MarketStockKlineIntraday) -> StockKlineBar:
+        return StockKlineBar(
+            trade_date=row.bar_time.strftime("%Y-%m-%d %H:%M:%S"),
+            open_price=float(row.open_price or 0),
+            close_price=float(row.close_price or 0),
+            high_price=float(row.high_price or 0),
+            low_price=float(row.low_price or 0),
+            volume=float(row.volume or 0),
+            amount=float(row.amount or 0),
+            amplitude=self._number(row.amplitude),
+            change_amount=self._number(row.change_amount),
+            change_percent=self._number(row.change_percent),
+            turnover_rate=self._number(row.turnover_rate),
+        )
+
+    @staticmethod
+    def _intraday_to_row(code: str, name: str, period: str, trade_date, item: StockKlineBar) -> MarketStockKlineIntraday:
+        return MarketStockKlineIntraday(
+            trade_date=trade_date,
+            bar_time=datetime.strptime(item.trade_date, "%Y-%m-%d %H:%M:%S"),
+            code=code,
+            period=period,
             name=name,
             open_price=item.open_price,
             close_price=item.close_price,

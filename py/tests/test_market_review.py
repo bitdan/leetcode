@@ -130,6 +130,47 @@ def build_kline_bars():
     ]
 
 
+def build_intraday_bars():
+    return [
+        StockKlineBar(
+            trade_date="2026-05-22 09:35:00",
+            open_price=10.0,
+            close_price=9.88,
+            high_price=10.05,
+            low_price=9.82,
+            volume=1200,
+            amount=11800,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-22 10:05:00",
+            open_price=9.88,
+            close_price=10.06,
+            high_price=10.10,
+            low_price=9.85,
+            volume=1800,
+            amount=18200,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-22 10:35:00",
+            open_price=10.06,
+            close_price=11.00,
+            high_price=11.00,
+            low_price=10.02,
+            volume=2800,
+            amount=30200,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-22 11:05:00",
+            open_price=10.95,
+            close_price=11.00,
+            high_price=11.04,
+            low_price=10.90,
+            volume=1600,
+            amount=17600,
+        ),
+    ]
+
+
 class FakeMarketReviewStore:
     def __init__(self, stored_review=None, available=True):
         self.stored_review = stored_review
@@ -138,7 +179,9 @@ class FakeMarketReviewStore:
         self.failed_marks = []
         self.status_payload = None
         self.kline_bars = []
+        self.intraday_bars = []
         self.saved_kline = []
+        self.saved_intraday = []
         self.stock_name = ""
 
     def is_available(self):
@@ -161,6 +204,12 @@ class FakeMarketReviewStore:
 
     def save_stock_kline_daily(self, code, name, bars):
         self.saved_kline.append((code, name, bars))
+
+    def get_stock_kline_intraday(self, code, period, trade_date):
+        return self.intraday_bars
+
+    def save_stock_kline_intraday(self, code, name, period, trade_date, bars):
+        self.saved_intraday.append((code, name, period, trade_date, bars))
 
     def get_stock_name(self, code):
         return self.stock_name
@@ -250,7 +299,7 @@ class MarketReviewServiceTest(unittest.TestCase):
     def test_stock_kline_fetches_and_persists_when_store_empty(self):
         store = FakeMarketReviewStore()
         service = MarketReviewService(store=store, cache_ttl_seconds=300)
-        service._fetch_stock_kline = lambda *args, **kwargs: build_kline_bars()
+        service._fetch_stock_kline_daily = lambda *args, **kwargs: build_kline_bars()
 
         result = service.stock_kline("000001", "2026-05-22", limit=60, refresh=True, name="平安银行")
 
@@ -260,6 +309,40 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(4, len(result.bars))
         self.assertIsNotNone(result.bars[-1].dif)
         self.assertIsNotNone(result.bars[-1].macd)
+
+    def test_intraday_kline_builds_signals(self):
+        store = FakeMarketReviewStore()
+        store.intraday_bars = build_intraday_bars()
+        store.kline_bars = [
+            StockKlineBar(
+                trade_date="2026-05-21",
+                open_price=9.95,
+                close_price=10.00,
+                high_price=10.05,
+                low_price=9.90,
+                volume=1000,
+                amount=10000,
+            ),
+            StockKlineBar(
+                trade_date="2026-05-22",
+                open_price=10.00,
+                close_price=11.00,
+                high_price=11.02,
+                low_price=9.82,
+                volume=5000,
+                amount=57800,
+            ),
+        ]
+        store.stock_name = "平安银行"
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        service._fetch_stock_kline_daily = lambda *args, **kwargs: store.kline_bars
+
+        result = service.stock_kline("000001", "2026-05-22", period="30", limit=32)
+
+        self.assertEqual("30", result.period)
+        self.assertEqual(4, len(result.bars))
+        self.assertTrue(any(item.signal_type == "weak_to_strong" for item in result.intraday_signals))
+        self.assertTrue(any(item.signal_type == "reseal" for item in result.intraday_signals))
 
 
 if __name__ == "__main__":

@@ -120,9 +120,10 @@ def create_router(container) -> APIRouter:
             limit: int = Query(default=120, ge=30, le=240),
             refresh: bool = Query(default=False),
             name: str = Query(default=""),
+            period: str = Query(default="day"),
     ):
         try:
-            data = service.stock_kline(code, date or None, limit=limit, refresh=refresh, name=name)
+            data = service.stock_kline(code, date or None, limit=limit, refresh=refresh, name=name, period=period)
             return ApiResponse(code=200, msg="获取个股K线成功", data=dump_model(data))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

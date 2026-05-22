@@ -74,6 +74,9 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
 
 The `py/` app is a FastAPI backend assembled in `py/app.py` through a dependency container from `py/bootstrap.py`.
 
+- Local Python backend work should run inside the Conda environment `ai`. Start PowerShell sessions with
+  `conda activate ai` before running Python commands, Alembic migrations, or backend tests.
+
 - Add new backend features as domain modules under `py/<domain>/`, typically with `schemas.py`, `service.py`,
   `store.py`, and `routes.py`.
 - Route factories should expose `create_router(container)` and be registered in `py/app.py`.
@@ -118,6 +121,7 @@ Run Alembic migrations from the `py/` directory after adding or changing SQLAlch
 PowerShell local environment:
 
 ```powershell
+conda activate ai
 cd py
 $env:POSTGRES_DSN="postgresql+psycopg2://user:password@localhost:5432/database"
 python -m alembic upgrade head
@@ -126,6 +130,7 @@ python -m alembic upgrade head
 For the Agent evaluation tables added in revision `20260518_0004`, either migrate to the latest head:
 
 ```powershell
+conda activate ai
 cd py
 python -m alembic upgrade head
 ```
@@ -133,6 +138,7 @@ python -m alembic upgrade head
 or migrate directly to that revision:
 
 ```powershell
+conda activate ai
 cd py
 python -m alembic upgrade 20260518_0004
 ```
@@ -140,6 +146,7 @@ python -m alembic upgrade 20260518_0004
 Verify the applied revision:
 
 ```powershell
+conda activate ai
 cd py
 python -m alembic current
 python -m alembic history --verbose

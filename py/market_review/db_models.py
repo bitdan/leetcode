@@ -121,3 +121,29 @@ class MarketReviewSignal(Base):
     rule_version: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'v1'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+
+class MarketStockKlineDaily(Base):
+    __tablename__ = "market_stock_kline_daily"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "code", name="uq_market_stock_kline_daily_date_code"),
+        Index("idx_market_stock_kline_daily_code_date", "code", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("''"))
+    open_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    close_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    high_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    low_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    volume: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, server_default=text("0"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, server_default=text("0"))
+    amplitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    change_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    change_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    turnover_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))

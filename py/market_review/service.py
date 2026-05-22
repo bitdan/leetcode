@@ -2,7 +2,7 @@ import logging
 import math
 import re
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from time import monotonic
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,6 +12,9 @@ from market_review.schemas import (
     LimitUpStock,
     MarketReviewData,
     SectorStrength,
+    StockKlineBar,
+    StockKlineSnapshot,
+    StockKlineSummary,
 )
 from market_review.store import MarketReviewStore, MarketReviewStoreUnavailable
 
@@ -300,6 +303,51 @@ class MarketReviewService:
                 "error_message": str(exc),
             }
 
+    def stock_kline(
+            self,
+            code: str,
+            trading_date: Optional[str] = None,
+            limit: int = 120,
+            refresh: bool = False,
+            name: str = "",
+    ) -> StockKlineSnapshot:
+        normalized_code = self._normalize_code(code)
+        normalized_date = self._normalize_date(trading_date)
+        normalized_limit = max(30, min(limit, 240))
+        bars: List[StockKlineBar] = []
+
+        if not refresh and self.store and self.store.is_available():
+            try:
+                bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
+            except MarketReviewStoreUnavailable as exc:
+                logger.warning("Market review kline load skipped for %s: %s", normalized_code, exc)
+
+        if not bars:
+            bars = self._fetch_stock_kline(normalized_code, normalized_date, normalized_limit)
+            if self.store and self.store.is_available():
+                try:
+                    self.store.save_stock_kline_daily(normalized_code, name, bars)
+                except MarketReviewStoreUnavailable as exc:
+                    logger.warning("Market review kline save skipped for %s: %s", normalized_code, exc)
+
+        display_name = name.strip()
+        if not display_name and self.store and self.store.is_available():
+            try:
+                display_name = self.store.get_stock_name(normalized_code)
+            except MarketReviewStoreUnavailable as exc:
+                logger.warning("Market review stock name load skipped for %s: %s", normalized_code, exc)
+
+        enriched_bars = self._apply_kline_indicators(bars)
+        return StockKlineSnapshot(
+            code=normalized_code,
+            name=display_name,
+            date=normalized_date,
+            period="day",
+            bars=enriched_bars,
+            summary=self._build_kline_summary(enriched_bars),
+            technical_tags=self._build_kline_tags(enriched_bars),
+        )
+
     def _prime_caches(self, normalized_date: str, data: MarketReviewData) -> None:
         self._review_cache[normalized_date] = (monotonic(), data)
         self._limit_up_cache[normalized_date] = (monotonic(), data.limit_up_pool)
@@ -327,6 +375,13 @@ class MarketReviewService:
         if target != source + 1:
             raise ValueError("候选池类型仅支持连续晋级，例如 1_to_2、2_to_3")
         return f"{source}_to_{target}"
+
+    @staticmethod
+    def _normalize_code(value: str) -> str:
+        text = re.sub(r"\D", "", (value or "").strip())
+        if len(text) != 6:
+            raise ValueError("股票代码应为 6 位数字")
+        return text
 
     @staticmethod
     def _normalize_date(value: Optional[str]) -> str:
@@ -481,3 +536,144 @@ class MarketReviewService:
         if value <= 0:
             return 0
         return min(math.log10(value + 1) * 1.8, cap)
+
+    def _fetch_stock_kline(self, code: str, normalized_date: str, limit: int) -> List[StockKlineBar]:
+        ak = self._load_akshare()
+        start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=limit * 3)).strftime("%Y%m%d")
+        end_date = normalized_date.replace("-", "")
+        try:
+            frame = ak.stock_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="qfq",
+            )
+        except Exception as exc:
+            raise MarketReviewUnavailable("AKShare 个股 K 线数据暂不可用") from exc
+        rows = frame.to_dict(orient="records")
+        bars = [self._row_to_kline_bar(row) for row in rows]
+        if not bars:
+            raise MarketReviewUnavailable("未获取到个股 K 线数据")
+        return bars[-limit:]
+
+    def _row_to_kline_bar(self, row: Dict[str, Any]) -> StockKlineBar:
+        trade_date = self._normalize_hist_date(self._pick(row, "日期", "trade_date"))
+        return StockKlineBar(
+            trade_date=trade_date,
+            open_price=self._to_float(self._pick(row, "开盘", "open")) or 0,
+            close_price=self._to_float(self._pick(row, "收盘", "close")) or 0,
+            high_price=self._to_float(self._pick(row, "最高", "high")) or 0,
+            low_price=self._to_float(self._pick(row, "最低", "low")) or 0,
+            volume=self._to_float(self._pick(row, "成交量", "volume")) or 0,
+            amount=self._to_float(self._pick(row, "成交额", "amount")) or 0,
+            amplitude=self._to_float(self._pick(row, "振幅", "amplitude")),
+            change_amount=self._to_float(self._pick(row, "涨跌额", "change_amount")),
+            change_percent=self._to_float(self._pick(row, "涨跌幅", "change_percent")),
+            turnover_rate=self._to_float(self._pick(row, "换手率", "turnover_rate")),
+        )
+
+    @staticmethod
+    def _normalize_hist_date(value: Any) -> str:
+        text = str(value).strip()
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        raise ValueError("无法解析 K 线日期")
+
+    def _apply_kline_indicators(self, bars: List[StockKlineBar]) -> List[StockKlineBar]:
+        closes = [item.close_price for item in bars]
+        volumes = [item.volume or 0 for item in bars]
+        ema12_values = self._ema(closes, 12)
+        ema26_values = self._ema(closes, 26)
+        dif_values = [round(ema12 - ema26, 4) for ema12, ema26 in zip(ema12_values, ema26_values)]
+        dea_values = self._ema(dif_values, 9)
+        for index, item in enumerate(bars):
+            item.ma5 = self._moving_average(closes, index, 5)
+            item.ma10 = self._moving_average(closes, index, 10)
+            item.ma20 = self._moving_average(closes, index, 20)
+            item.ma30 = self._moving_average(closes, index, 30)
+            item.ma60 = self._moving_average(closes, index, 60)
+            item.dif = round(dif_values[index], 4)
+            item.dea = round(dea_values[index], 4)
+            item.macd = round((item.dif - item.dea) * 2, 4)
+            if item.change_percent is None and index > 0 and closes[index - 1] > 0:
+                item.change_percent = round(((item.close_price - closes[index - 1]) / closes[index - 1]) * 100, 4)
+            if item.change_amount is None and index > 0:
+                item.change_amount = round(item.close_price - closes[index - 1], 4)
+        return bars
+
+    @staticmethod
+    def _moving_average(values: List[float], index: int, window: int) -> Optional[float]:
+        if index + 1 < window:
+            return None
+        segment = values[index - window + 1:index + 1]
+        return round(sum(segment) / window, 4)
+
+    @staticmethod
+    def _ema(values: List[float], period: int) -> List[float]:
+        if not values:
+            return []
+        result = [values[0]]
+        multiplier = 2 / (period + 1)
+        for value in values[1:]:
+            result.append((value - result[-1]) * multiplier + result[-1])
+        return result
+
+    def _build_kline_summary(self, bars: List[StockKlineBar]) -> Optional[StockKlineSummary]:
+        if not bars:
+            return None
+        latest = bars[-1]
+        return StockKlineSummary(
+            latest_price=latest.close_price,
+            change_amount=latest.change_amount,
+            change_percent=latest.change_percent,
+            open_price=latest.open_price,
+            high_price=latest.high_price,
+            low_price=latest.low_price,
+            volume=latest.volume,
+            amount=latest.amount,
+            turnover_rate=latest.turnover_rate,
+            ma5=latest.ma5,
+            ma10=latest.ma10,
+            ma20=latest.ma20,
+            ma30=latest.ma30,
+            ma60=latest.ma60,
+        )
+
+    def _build_kline_tags(self, bars: List[StockKlineBar]) -> List[str]:
+        if len(bars) < 2:
+            return []
+        latest = bars[-1]
+        previous = bars[-2]
+        closes = [item.close_price for item in bars]
+        volumes = [item.volume or 0 for item in bars]
+        tags: List[str] = []
+        recent_high_20 = max(closes[-20:]) if len(closes) >= 20 else max(closes)
+        if latest.close_price >= recent_high_20:
+            tags.append("近20日新高")
+        if latest.ma5 and latest.ma10 and latest.ma20 and latest.close_price >= latest.ma5 >= latest.ma10 >= latest.ma20:
+            tags.append("均线多头")
+        elif latest.ma20 and latest.close_price >= latest.ma20:
+            tags.append("站上20日线")
+        else:
+            tags.append("20日线下")
+        avg_volume_5 = sum(volumes[-5:]) / min(len(volumes), 5)
+        if avg_volume_5 > 0:
+            if latest.volume >= avg_volume_5 * 1.8:
+                tags.append("放量")
+            elif latest.volume <= avg_volume_5 * 0.7:
+                tags.append("缩量")
+        if latest.macd is not None and previous.macd is not None:
+            if latest.dif is not None and latest.dea is not None and previous.dif is not None and previous.dea is not None:
+                if latest.dif >= latest.dea and previous.dif < previous.dea:
+                    tags.append("MACD金叉")
+                elif latest.dif <= latest.dea and previous.dif > previous.dea:
+                    tags.append("MACD死叉")
+        if latest.close_price > latest.open_price:
+            tags.append("阳线")
+        elif latest.close_price < latest.open_price:
+            tags.append("阴线")
+        return tags[:6]

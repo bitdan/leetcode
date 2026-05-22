@@ -108,3 +108,28 @@ CREATE TABLE IF NOT EXISTS market_review_signal
 
 CREATE INDEX IF NOT EXISTS idx_market_review_signal_date_type_score
     ON market_review_signal (trade_date, signal_type, signal_score);
+
+CREATE TABLE IF NOT EXISTS market_stock_kline_daily
+(
+    id BIGSERIAL PRIMARY KEY,
+    trade_date     DATE           NOT NULL,
+    code           VARCHAR(16)    NOT NULL,
+    name           VARCHAR(64)    NOT NULL DEFAULT '',
+    open_price     NUMERIC(18, 4) NOT NULL,
+    close_price    NUMERIC(18, 4) NOT NULL,
+    high_price     NUMERIC(18, 4) NOT NULL,
+    low_price      NUMERIC(18, 4) NOT NULL,
+    volume         NUMERIC(20, 2) NOT NULL DEFAULT 0,
+    amount         NUMERIC(20, 2) NOT NULL DEFAULT 0,
+    amplitude      NUMERIC(10, 4),
+    change_amount  NUMERIC(18, 4),
+    change_percent NUMERIC(10, 4),
+    turnover_rate  NUMERIC(10, 4),
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_market_stock_kline_daily_date_code UNIQUE (trade_date, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_stock_kline_daily_code_date
+    ON market_stock_kline_daily (code, trade_date);

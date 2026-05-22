@@ -113,4 +113,20 @@ def create_router(container) -> APIRouter:
         except MarketReviewUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
+    @router.get("/kline/{code}", response_model=ApiResponse)
+    async def stock_kline(
+            code: str,
+            date: str = Query(default=""),
+            limit: int = Query(default=120, ge=30, le=240),
+            refresh: bool = Query(default=False),
+            name: str = Query(default=""),
+    ):
+        try:
+            data = service.stock_kline(code, date or None, limit=limit, refresh=refresh, name=name)
+            return ApiResponse(code=200, msg="获取个股K线成功", data=dump_model(data))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except MarketReviewUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
     return router

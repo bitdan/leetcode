@@ -9,6 +9,7 @@ from market_review.db_models import (
     MarketReviewRun,
     MarketReviewSignal,
     MarketSectorStrength,
+    MarketStockKlineDaily,
 )
 from market_review.schemas import (
     CandidateStock,
@@ -16,6 +17,7 @@ from market_review.schemas import (
     LimitUpStock,
     MarketReviewData,
     SectorStrength,
+    StockKlineBar,
 )
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -163,6 +165,63 @@ class MarketReviewStore:
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
         return None
+
+    def get_stock_kline_daily(self, code: str, limit: int, end_date: str) -> list[StockKlineBar]:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                rows = session.scalars(
+                    select(MarketStockKlineDaily)
+                    .where(
+                        MarketStockKlineDaily.code == code,
+                        MarketStockKlineDaily.trade_date <= self._parse_date(end_date),
+                    )
+                    .order_by(MarketStockKlineDaily.trade_date.desc())
+                    .limit(limit)
+                ).all()
+                rows = list(reversed(rows))
+                return [self._kline_from_row(item) for item in rows]
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def save_stock_kline_daily(self, code: str, name: str, bars: list[StockKlineBar]) -> None:
+        self._ensure_available()
+        if not bars:
+            return
+        try:
+            with session_scope(self.session_factory) as session:
+                trade_dates = [self._parse_date(item.trade_date) for item in bars]
+                session.execute(
+                    delete(MarketStockKlineDaily).where(
+                        MarketStockKlineDaily.code == code,
+                        MarketStockKlineDaily.trade_date.in_(trade_dates),
+                    )
+                )
+                session.add_all([self._kline_to_row(code, name, item) for item in bars])
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def get_stock_name(self, code: str) -> str:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                kline_name = session.scalar(
+                    select(MarketStockKlineDaily.name)
+                    .where(MarketStockKlineDaily.code == code, MarketStockKlineDaily.name != "")
+                    .order_by(MarketStockKlineDaily.trade_date.desc())
+                    .limit(1)
+                )
+                if kline_name:
+                    return kline_name
+                pool_name = session.scalar(
+                    select(MarketLimitUpPool.name)
+                    .where(MarketLimitUpPool.code == code)
+                    .order_by(MarketLimitUpPool.trade_date.desc())
+                    .limit(1)
+                )
+                return pool_name or ""
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
 
     def _ensure_available(self) -> None:
         if not self.session_factory:
@@ -313,4 +372,38 @@ class MarketReviewStore:
             reasons=list(item.reasons),
             risks=list(item.risks),
             rule_version="v1",
+        )
+
+    def _kline_from_row(self, row: MarketStockKlineDaily) -> StockKlineBar:
+        return StockKlineBar(
+            trade_date=row.trade_date.isoformat(),
+            open_price=float(row.open_price or 0),
+            close_price=float(row.close_price or 0),
+            high_price=float(row.high_price or 0),
+            low_price=float(row.low_price or 0),
+            volume=float(row.volume or 0),
+            amount=float(row.amount or 0),
+            amplitude=self._number(row.amplitude),
+            change_amount=self._number(row.change_amount),
+            change_percent=self._number(row.change_percent),
+            turnover_rate=self._number(row.turnover_rate),
+        )
+
+    @staticmethod
+    def _kline_to_row(code: str, name: str, item: StockKlineBar) -> MarketStockKlineDaily:
+        return MarketStockKlineDaily(
+            trade_date=datetime.strptime(item.trade_date, "%Y-%m-%d").date(),
+            code=code,
+            name=name,
+            open_price=item.open_price,
+            close_price=item.close_price,
+            high_price=item.high_price,
+            low_price=item.low_price,
+            volume=item.volume or 0,
+            amount=item.amount or 0,
+            amplitude=item.amplitude,
+            change_amount=item.change_amount,
+            change_percent=item.change_percent,
+            turnover_rate=item.turnover_rate,
+            raw_payload={},
         )

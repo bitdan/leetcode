@@ -11,6 +11,7 @@ from market_review.schemas import (
     LimitUpStock,
     MarketReviewData,
     SectorStrength,
+    StockKlineBar,
 )
 from market_review.service import MarketReviewService
 
@@ -76,6 +77,59 @@ def build_review_data(trade_date: str = "2026-05-22") -> MarketReviewData:
     )
 
 
+def build_kline_bars():
+    return [
+        StockKlineBar(
+            trade_date="2026-05-19",
+            open_price=10.0,
+            close_price=10.2,
+            high_price=10.3,
+            low_price=9.9,
+            volume=1000,
+            amount=10000,
+            change_amount=0.2,
+            change_percent=2.0,
+            turnover_rate=3.0,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-20",
+            open_price=10.2,
+            close_price=10.6,
+            high_price=10.7,
+            low_price=10.1,
+            volume=1400,
+            amount=14800,
+            change_amount=0.4,
+            change_percent=3.92,
+            turnover_rate=3.6,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-21",
+            open_price=10.5,
+            close_price=10.9,
+            high_price=11.0,
+            low_price=10.4,
+            volume=1800,
+            amount=19000,
+            change_amount=0.3,
+            change_percent=2.83,
+            turnover_rate=4.2,
+        ),
+        StockKlineBar(
+            trade_date="2026-05-22",
+            open_price=10.9,
+            close_price=11.3,
+            high_price=11.4,
+            low_price=10.8,
+            volume=3200,
+            amount=36000,
+            change_amount=0.4,
+            change_percent=3.67,
+            turnover_rate=5.1,
+        ),
+    ]
+
+
 class FakeMarketReviewStore:
     def __init__(self, stored_review=None, available=True):
         self.stored_review = stored_review
@@ -83,6 +137,9 @@ class FakeMarketReviewStore:
         self.saved_reviews = []
         self.failed_marks = []
         self.status_payload = None
+        self.kline_bars = []
+        self.saved_kline = []
+        self.stock_name = ""
 
     def is_available(self):
         return self.available
@@ -98,6 +155,15 @@ class FakeMarketReviewStore:
 
     def status(self, trade_date):
         return self.status_payload or {"date": trade_date, "status": "success"}
+
+    def get_stock_kline_daily(self, code, limit, end_date):
+        return self.kline_bars[-limit:]
+
+    def save_stock_kline_daily(self, code, name, bars):
+        self.saved_kline.append((code, name, bars))
+
+    def get_stock_name(self, code):
+        return self.stock_name
 
 
 class MarketReviewServiceTest(unittest.TestCase):
@@ -165,6 +231,35 @@ class MarketReviewServiceTest(unittest.TestCase):
 
         self.assertEqual("store_unavailable", status_payload["status"])
         self.assertIn("Alembic", status_payload["error_message"])
+
+    def test_stock_kline_returns_stored_bars(self):
+        store = FakeMarketReviewStore()
+        store.kline_bars = build_kline_bars()
+        store.stock_name = "平安银行"
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+
+        result = service.stock_kline("000001", "2026-05-22", limit=60)
+
+        self.assertEqual("000001", result.code)
+        self.assertEqual("平安银行", result.name)
+        self.assertEqual(4, len(result.bars))
+        self.assertEqual(11.3, result.summary.latest_price)
+        self.assertTrue(result.technical_tags)
+        self.assertEqual(0, len(store.saved_kline))
+
+    def test_stock_kline_fetches_and_persists_when_store_empty(self):
+        store = FakeMarketReviewStore()
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        service._fetch_stock_kline = lambda *args, **kwargs: build_kline_bars()
+
+        result = service.stock_kline("000001", "2026-05-22", limit=60, refresh=True, name="平安银行")
+
+        self.assertEqual(1, len(store.saved_kline))
+        self.assertEqual("000001", store.saved_kline[0][0])
+        self.assertEqual("平安银行", store.saved_kline[0][1])
+        self.assertEqual(4, len(result.bars))
+        self.assertIsNotNone(result.bars[-1].dif)
+        self.assertIsNotNone(result.bars[-1].macd)
 
 
 if __name__ == "__main__":

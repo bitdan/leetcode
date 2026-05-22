@@ -64,3 +64,52 @@ class MarketReviewData(BaseModel):
     advancement_candidates: List[CandidateStock] = Field(default_factory=list)
     candidates_2_to_3: List[CandidateStock] = Field(default_factory=list)
     divergence_consensus: List[DivergenceConsensusSignal] = Field(default_factory=list)
+
+
+class StockKlineBar(BaseModel):
+    trade_date: str
+    open_price: float
+    close_price: float
+    high_price: float
+    low_price: float
+    volume: float = 0
+    amount: float = 0
+    amplitude: Optional[float] = None
+    change_amount: Optional[float] = None
+    change_percent: Optional[float] = None
+    turnover_rate: Optional[float] = None
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None
+    ma30: Optional[float] = None
+    ma60: Optional[float] = None
+    dif: Optional[float] = None
+    dea: Optional[float] = None
+    macd: Optional[float] = None
+
+
+class StockKlineSummary(BaseModel):
+    latest_price: float
+    change_amount: Optional[float] = None
+    change_percent: Optional[float] = None
+    open_price: float
+    high_price: float
+    low_price: float
+    volume: float = 0
+    amount: float = 0
+    turnover_rate: Optional[float] = None
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None
+    ma30: Optional[float] = None
+    ma60: Optional[float] = None
+
+
+class StockKlineSnapshot(BaseModel):
+    code: str
+    name: str = ""
+    period: str = "day"
+    date: str
+    bars: List[StockKlineBar] = Field(default_factory=list)
+    summary: Optional[StockKlineSummary] = None
+    technical_tags: List[str] = Field(default_factory=list)

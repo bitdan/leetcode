@@ -20,6 +20,7 @@ class LimitUpStock(BaseModel):
     limit_up_stat: str = ""
     board_quality_score: float = 0
     tags: List[str] = Field(default_factory=list)
+    raw_payload: dict = Field(default_factory=dict)
 
 
 class SectorStrength(BaseModel):
@@ -38,6 +39,8 @@ class SectorStrength(BaseModel):
 class CandidateStock(BaseModel):
     stock: LimitUpStock
     sector: Optional[SectorStrength] = None
+    pool_type: str = "2_to_3"
+    target_boards: int = 3
     candidate_score: float = 0
     level: str = "观察"
     reasons: List[str] = Field(default_factory=list)
@@ -58,5 +61,6 @@ class MarketReviewData(BaseModel):
     date: str
     limit_up_pool: List[LimitUpStock] = Field(default_factory=list)
     sector_strength: List[SectorStrength] = Field(default_factory=list)
+    advancement_candidates: List[CandidateStock] = Field(default_factory=list)
     candidates_2_to_3: List[CandidateStock] = Field(default_factory=list)
     divergence_consensus: List[DivergenceConsensusSignal] = Field(default_factory=list)

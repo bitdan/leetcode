@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 import agent_eval.db_models  # noqa: F401
 import auth.db_models  # noqa: F401
+import market_review.db_models  # noqa: F401
 import post.db_models  # noqa: F401
 from alembic import context
 from core.settings import get_settings

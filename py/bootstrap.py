@@ -13,6 +13,7 @@ from chat.service import ChatService, RedisChatService
 from core.settings import Settings
 from game.service import GameService
 from market_review.service import MarketReviewService
+from market_review.store import MarketReviewStore
 from mcp_server.registry import create_default_tool_registry
 from post.service import PostService
 from post.store import PostStore
@@ -75,7 +76,7 @@ def build_container(settings: Settings) -> Container:
         game_service=GameService(),
         chat_service=create_chat_service(settings),
         post_service=PostService(PostStore(settings.postgres_dsn)),
-        market_review_service=MarketReviewService(),
+        market_review_service=MarketReviewService(MarketReviewStore(settings.postgres_dsn)),
         agent_chat_service=AgentChatService(),
         agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn)),
         mcp_tool_registry=create_default_tool_registry(),

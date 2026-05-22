@@ -30,6 +30,8 @@ def create_app() -> FastAPI:
             await container.chat_service.stop()
             container.user_service.close()
             container.post_service.close()
+            if container.market_review_service.store:
+                container.market_review_service.store.close()
             container.agent_eval_service.store.close()
 
     app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)

@@ -149,6 +149,21 @@ class MarketStockKlineDaily(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
+class MarketStockUniverse(Base):
+    __tablename__ = "market_stock_universe"
+    __table_args__ = (
+        Index("idx_market_stock_universe_status_code", "status", "code"),
+    )
+
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("''"))
+    market: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
+    raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+
 class MarketStockKlineIntraday(Base):
     __tablename__ = "market_stock_kline_intraday"
     __table_args__ = (

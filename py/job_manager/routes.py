@@ -40,9 +40,11 @@ JOB_DEFINITIONS = [
             {"key": "start", "label": "开始日期", "type": "date", "placeholder": "YYYY-MM-DD"},
             {"key": "end", "label": "结束日期", "type": "date", "placeholder": "YYYY-MM-DD"},
             {"key": "codes", "label": "股票代码", "type": "text", "placeholder": "000001 600519，可留空同步全A"},
+            {"key": "offset", "label": "起始偏移", "type": "number", "placeholder": "分批用，默认0"},
             {"key": "limit_codes", "label": "限制数量", "type": "number", "placeholder": "测试用，可留空"},
+            {"key": "refresh_universe", "label": "刷新股票池", "type": "select", "options": ["false", "true"]},
             {"key": "adjust", "label": "复权", "type": "select", "options": ["qfq", "hfq", ""]},
-            {"key": "sleep", "label": "请求间隔秒", "type": "number", "placeholder": "0.05"},
+            {"key": "sleep", "label": "请求间隔秒", "type": "number", "placeholder": "0.3"},
         ],
     }
 ]
@@ -112,15 +114,19 @@ def execute_market_daily_sync(container, runs: Dict[str, JobRunRecord], lock: Lo
         start = date or params.get("start", "")
         end = date or params.get("end", "")
         codes = split_codes(params.get("codes", ""))
+        offset = int(params.get("offset") or 0)
         limit_codes = int(params.get("limit_codes") or 0)
+        refresh_universe = str(params.get("refresh_universe") or "false").lower() == "true"
         adjust = params.get("adjust", "qfq")
-        sleep = float(params.get("sleep") or 0.05)
+        sleep = float(params.get("sleep") or 0.3)
 
         result = DailyKlineSyncer(store, adjust=adjust, sleep_seconds=sleep).sync_range(
             start,
             end,
             codes=codes,
+            offset=offset,
             limit_codes=limit_codes,
+            refresh_universe=refresh_universe,
         )
         with lock:
             record = runs[run_id]
@@ -149,7 +155,8 @@ def normalize_params(params: Dict[str, Any]) -> Dict[str, Any]:
         if value != "":
             normalized[key] = value
     normalized.setdefault("adjust", "qfq")
-    normalized.setdefault("sleep", 0.05)
+    normalized.setdefault("sleep", 0.3)
+    normalized.setdefault("refresh_universe", "false")
     return normalized
 
 

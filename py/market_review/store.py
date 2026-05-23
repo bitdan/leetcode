@@ -11,6 +11,7 @@ from market_review.db_models import (
     MarketSectorStrength,
     MarketStockKlineDaily,
     MarketStockKlineIntraday,
+    MarketStockUniverse,
 )
 from market_review.schemas import (
     CandidateStock,
@@ -314,6 +315,62 @@ class MarketReviewStore:
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 
+    def get_stock_universe(self) -> list[dict]:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                rows = session.scalars(
+                    select(MarketStockUniverse)
+                    .where(MarketStockUniverse.status == "active")
+                    .order_by(MarketStockUniverse.code.asc())
+                ).all()
+                return [
+                    {
+                        "code": item.code,
+                        "name": item.name,
+                        "market": item.market,
+                        "status": item.status,
+                    }
+                    for item in rows
+                ]
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def upsert_stock_universe(self, stocks: list[dict]) -> int:
+        self._ensure_available()
+        rows = []
+        for item in stocks:
+            code = str(item.get("code") or "").strip()
+            if not code:
+                continue
+            rows.append({
+                "code": code,
+                "name": str(item.get("name") or "").strip(),
+                "market": str(item.get("market") or self._infer_market(code)),
+                "status": str(item.get("status") or "active"),
+                "raw_payload": item.get("raw_payload") or {},
+            })
+        if not rows:
+            return 0
+        try:
+            with session_scope(self.session_factory) as session:
+                stmt = pg_insert(MarketStockUniverse).values(rows)
+                session.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=[MarketStockUniverse.code],
+                        set_={
+                            "name": stmt.excluded.name,
+                            "market": stmt.excluded.market,
+                            "status": stmt.excluded.status,
+                            "raw_payload": stmt.excluded.raw_payload,
+                            "updated_at": datetime.now(),
+                        },
+                    )
+                )
+                return len(rows)
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
     def _ensure_available(self) -> None:
         if not self.session_factory:
             raise MarketReviewStoreUnavailable(self.unavailable_reason or "POSTGRES_DSN 未配置，市场复盘快照不可用")
@@ -331,6 +388,16 @@ class MarketReviewStore:
     @staticmethod
     def _number(value):
         return float(value) if value is not None else None
+
+    @staticmethod
+    def _infer_market(code: str) -> str:
+        if code.startswith(("5", "6", "9")):
+            return "SH"
+        if code.startswith(("0", "1", "2", "3")):
+            return "SZ"
+        if code.startswith(("4", "8")):
+            return "BJ"
+        return ""
 
     def _stock_from_row(self, row: MarketLimitUpPool) -> LimitUpStock:
         return LimitUpStock(

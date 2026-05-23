@@ -41,14 +41,18 @@ class DailyKlineSyncer:
             start_date: str,
             end_date: str,
             codes: Optional[Iterable[str]] = None,
+            offset: int = 0,
             limit_codes: int = 0,
+            refresh_universe: bool = False,
     ) -> SyncResult:
         start = normalize_date(start_date)
         end = normalize_date(end_date)
         if start > end:
             raise ValueError("start date must be before or equal to end date")
 
-        stocks = self._load_stock_universe(codes)
+        stocks = self._load_stock_universe(codes, refresh=refresh_universe)
+        if offset > 0:
+            stocks = stocks[offset:]
         if limit_codes > 0:
             stocks = stocks[:limit_codes]
         result = SyncResult(total_codes=len(stocks))
@@ -77,9 +81,21 @@ class DailyKlineSyncer:
 
         return result
 
-    def _load_stock_universe(self, codes: Optional[Iterable[str]]) -> List[StockIdentity]:
+    def _load_stock_universe(self, codes: Optional[Iterable[str]], refresh: bool = False) -> List[StockIdentity]:
         requested = {normalize_code(item) for item in codes or [] if item}
-        rows = self._fetch_stock_list()
+        rows = [] if refresh else self.store.get_stock_universe()
+        if not rows:
+            rows = self._fetch_stock_list()
+            self.store.upsert_stock_universe([
+                {
+                    "code": normalize_code(pick(row, "代码", "code", "证券代码")),
+                    "name": str(pick(row, "名称", "name", "证券简称") or "").strip(),
+                    "market": "",
+                    "status": "active",
+                    "raw_payload": row,
+                }
+                for row in rows
+            ])
         stocks: List[StockIdentity] = []
         for row in rows:
             code = normalize_code(pick(row, "代码", "code", "证券代码"))
@@ -100,13 +116,16 @@ class DailyKlineSyncer:
             attempts.append(lambda: self.ak.stock_zh_a_spot_em())
         errors = []
         for fetcher in attempts:
-            try:
-                frame = fetcher()
-                rows = frame.to_dict(orient="records")
-                if rows:
-                    return rows
-            except Exception as exc:
-                errors.append(str(exc))
+            for retry_index in range(3):
+                try:
+                    frame = fetcher()
+                    rows = frame.to_dict(orient="records")
+                    if rows:
+                        return rows
+                    errors.append("empty stock list")
+                except Exception as exc:
+                    errors.append(str(exc))
+                time.sleep(min(2 + retry_index * 3, 8))
         raise RuntimeError(f"股票列表获取失败: {errors}")
 
     def _fetch_daily_bars(self, code: str, start_date: str, end_date: str) -> List[StockKlineBar]:
@@ -145,7 +164,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start", help="范围开始日期，格式 YYYY-MM-DD")
     parser.add_argument("--end", help="范围结束日期，格式 YYYY-MM-DD")
     parser.add_argument("--codes", nargs="*", help="只同步指定股票代码，默认同步全 A")
+    parser.add_argument("--offset", type=int, default=0, help="跳过前 N 只股票，便于分批同步")
     parser.add_argument("--limit-codes", type=int, default=0, help="限制同步股票数量，便于小批量测试")
+    parser.add_argument("--refresh-universe", action="store_true", help="强制刷新股票列表缓存")
     parser.add_argument("--adjust", default="qfq", choices=["", "qfq", "hfq"], help="复权方式，默认 qfq")
     parser.add_argument("--sleep", type=float, default=0.05, help="单只股票请求后的休眠秒数")
     return parser.parse_args()
@@ -170,7 +191,9 @@ def main() -> None:
             start,
             end,
             codes=args.codes,
+            offset=args.offset,
             limit_codes=args.limit_codes,
+            refresh_universe=args.refresh_universe,
         )
     except MarketReviewStoreUnavailable as exc:
         raise SystemExit(str(exc)) from exc

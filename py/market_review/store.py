@@ -22,6 +22,7 @@ from market_review.schemas import (
 )
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,59 @@ class MarketReviewStore:
                     )
                 )
                 session.add_all([self._kline_to_row(code, name, item) for item in bars])
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def upsert_stock_kline_daily(self, code: str, name: str, bars: list[StockKlineBar]) -> int:
+        self._ensure_available()
+        if not bars:
+            return 0
+        rows = []
+        for item in bars:
+            rows.append({
+                "trade_date": self._parse_date(item.trade_date),
+                "code": code,
+                "name": name,
+                "open_price": item.open_price,
+                "close_price": item.close_price,
+                "high_price": item.high_price,
+                "low_price": item.low_price,
+                "volume": item.volume or 0,
+                "amount": item.amount or 0,
+                "amplitude": item.amplitude,
+                "change_amount": item.change_amount,
+                "change_percent": item.change_percent,
+                "turnover_rate": item.turnover_rate,
+                "raw_payload": {},
+            })
+        try:
+            with session_scope(self.session_factory) as session:
+                stmt = pg_insert(MarketStockKlineDaily).values(rows)
+                update_columns = {
+                    column: getattr(stmt.excluded, column)
+                    for column in (
+                        "name",
+                        "open_price",
+                        "close_price",
+                        "high_price",
+                        "low_price",
+                        "volume",
+                        "amount",
+                        "amplitude",
+                        "change_amount",
+                        "change_percent",
+                        "turnover_rate",
+                        "raw_payload",
+                    )
+                }
+                update_columns["updated_at"] = datetime.now()
+                session.execute(
+                    stmt.on_conflict_do_update(
+                        constraint="uq_market_stock_kline_daily_date_code",
+                        set_=update_columns,
+                    )
+                )
+                return len(rows)
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 

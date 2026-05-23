@@ -11,6 +11,7 @@ from chat.routes import create_router as create_chat_router
 from core.logging import configure_logging, register_request_logging
 from core.settings import get_settings
 from game.routes import create_router as create_game_router
+from job_manager.routes import create_router as create_job_manager_router
 from market_review.routes import create_router as create_market_review_router
 from mcp_server.server import create_router as create_mcp_router
 from post.routes import create_router as create_post_router
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(create_chat_router(container))
     app.include_router(create_post_router(container))
     app.include_router(create_market_review_router(container))
+    app.include_router(create_job_manager_router(container))
     app.include_router(create_agent_chat_router(container))
     app.include_router(create_agent_eval_router(container))
     app.include_router(create_mcp_router(container))

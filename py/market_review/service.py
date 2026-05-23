@@ -584,40 +584,104 @@ class MarketReviewService:
         ak = self._load_akshare()
         start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=limit * 3)).strftime("%Y%m%d")
         end_date = normalized_date.replace("-", "")
-        try:
-            frame = ak.stock_zh_a_hist(
+        attempts = [
+            ("eastmoney-qfq", lambda: ak.stock_zh_a_hist(
                 symbol=code,
                 period="daily",
                 start_date=start_date,
                 end_date=end_date,
                 adjust="qfq",
-            )
-        except Exception as exc:
-            raise MarketReviewUnavailable("AKShare 个股 K 线数据暂不可用") from exc
-        rows = frame.to_dict(orient="records")
-        bars = [self._row_to_kline_bar(row) for row in rows]
-        if not bars:
-            raise MarketReviewUnavailable("未获取到个股 K 线数据")
-        return bars[-limit:]
+                timeout=15,
+            )),
+            ("eastmoney-raw", lambda: ak.stock_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="",
+                timeout=15,
+            )),
+        ]
+        if hasattr(ak, "stock_zh_a_hist_tx"):
+            attempts.extend([
+                ("tencent-qfq", lambda: ak.stock_zh_a_hist_tx(
+                    symbol=self._tx_symbol(code),
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust="qfq",
+                    timeout=15,
+                )),
+                ("tencent-raw", lambda: ak.stock_zh_a_hist_tx(
+                    symbol=self._tx_symbol(code),
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust="",
+                    timeout=15,
+                )),
+            ])
+
+        errors: List[str] = []
+        for source, fetcher in attempts:
+            try:
+                frame = fetcher()
+                rows = frame.to_dict(orient="records")
+                bars = self._rows_to_kline_bars(rows, self._row_to_kline_bar, source, code)
+                if bars:
+                    return bars[-limit:]
+                errors.append(f"{source}: empty")
+            except Exception as exc:
+                logger.warning("AKShare daily kline fetch failed for %s via %s: %s", code, source, exc)
+                errors.append(f"{source}: {exc}")
+        logger.warning("AKShare daily kline unavailable for %s, attempts=%s", code, errors)
+        raise MarketReviewUnavailable("AKShare 个股 K 线数据暂不可用")
 
     def _fetch_stock_kline_intraday(self, code: str, normalized_date: str, period: str) -> List[StockKlineBar]:
         ak = self._load_akshare()
         start_date = f"{normalized_date} 09:30:00"
         end_date = f"{normalized_date} 15:00:00"
-        try:
-            frame = ak.stock_zh_a_hist_min_em(
-                symbol=code,
-                start_date=start_date,
-                end_date=end_date,
-                period=period,
-                adjust="qfq",
-            )
-        except Exception as exc:
-            raise MarketReviewUnavailable("AKShare 分钟K线数据暂不可用") from exc
-        rows = frame.to_dict(orient="records")
-        bars = [self._row_to_intraday_kline_bar(row) for row in rows]
-        if not bars:
-            raise MarketReviewUnavailable("未获取到分时 K 线数据")
+        attempts = [
+            ("eastmoney-min-qfq", "qfq"),
+            ("eastmoney-min-raw", ""),
+        ]
+        errors: List[str] = []
+        for source, adjust in attempts:
+            try:
+                frame = ak.stock_zh_a_hist_min_em(
+                    symbol=code,
+                    start_date=start_date,
+                    end_date=end_date,
+                    period=period,
+                    adjust=adjust,
+                )
+                rows = frame.to_dict(orient="records")
+                bars = self._rows_to_kline_bars(rows, self._row_to_intraday_kline_bar, source, code)
+                if bars:
+                    return bars
+                errors.append(f"{source}: empty")
+            except Exception as exc:
+                logger.warning("AKShare intraday kline fetch failed for %s/%s via %s: %s",
+                               code, period, source, exc)
+                errors.append(f"{source}: {exc}")
+        logger.warning("AKShare intraday kline unavailable for %s/%s, attempts=%s", code, period, errors)
+        raise MarketReviewUnavailable("AKShare 分钟K线数据暂不可用")
+
+    @staticmethod
+    def _tx_symbol(code: str) -> str:
+        return f"sh{code}" if code.startswith(("5", "6", "9")) else f"sz{code}"
+
+    @staticmethod
+    def _rows_to_kline_bars(rows: List[Dict[str, Any]], converter, source: str, code: str) -> List[StockKlineBar]:
+        bars: List[StockKlineBar] = []
+        for row in rows:
+            try:
+                bar = converter(row)
+            except Exception as exc:
+                logger.warning("AKShare kline row skipped for %s via %s: %s; row=%s", code, source, exc, row)
+                continue
+            if bar.open_price <= 0 or bar.close_price <= 0 or bar.high_price <= 0 or bar.low_price <= 0:
+                logger.warning("AKShare kline row skipped for %s via %s: non-positive price row=%s", code, source, row)
+                continue
+            bars.append(bar)
         return bars
 
     def _row_to_kline_bar(self, row: Dict[str, Any]) -> StockKlineBar:

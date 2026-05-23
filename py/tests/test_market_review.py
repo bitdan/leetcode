@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
@@ -215,6 +216,14 @@ class FakeMarketReviewStore:
         return self.stock_name
 
 
+class FakeFrame:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def to_dict(self, orient="records"):
+        return self.rows
+
+
 class MarketReviewServiceTest(unittest.TestCase):
     def test_review_returns_stored_snapshot_without_rebuild(self):
         stored = build_review_data()
@@ -309,6 +318,57 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(4, len(result.bars))
         self.assertIsNotNone(result.bars[-1].dif)
         self.assertIsNotNone(result.bars[-1].macd)
+
+    def test_daily_kline_falls_back_to_unadjusted_when_qfq_empty(self):
+        class FakeAkshare:
+            calls = []
+
+            @staticmethod
+            def stock_zh_a_hist(**kwargs):
+                FakeAkshare.calls.append(kwargs["adjust"])
+                if kwargs["adjust"] == "qfq":
+                    return FakeFrame([])
+                return FakeFrame([{
+                    "日期": "2026-05-22",
+                    "开盘": 10.0,
+                    "收盘": 10.5,
+                    "最高": 10.8,
+                    "最低": 9.9,
+                    "成交量": 1200,
+                    "成交额": 12600,
+                }])
+
+        service = MarketReviewService()
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare):
+            bars = service._fetch_stock_kline_daily("000001", "2026-05-22", 30)
+
+        self.assertEqual(["qfq", ""], FakeAkshare.calls)
+        self.assertEqual(1, len(bars))
+        self.assertEqual(10.5, bars[0].close_price)
+
+    def test_daily_kline_skips_bad_rows(self):
+        class FakeAkshare:
+            @staticmethod
+            def stock_zh_a_hist(**kwargs):
+                return FakeFrame([
+                    {"日期": "", "开盘": 10.0, "收盘": 10.5, "最高": 10.8, "最低": 9.9},
+                    {
+                        "日期": "2026-05-22",
+                        "开盘": 10.0,
+                        "收盘": 10.5,
+                        "最高": 10.8,
+                        "最低": 9.9,
+                        "成交量": 1200,
+                        "成交额": 12600,
+                    },
+                ])
+
+        service = MarketReviewService()
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare):
+            bars = service._fetch_stock_kline_daily("000001", "2026-05-22", 30)
+
+        self.assertEqual(1, len(bars))
+        self.assertEqual("2026-05-22", bars[0].trade_date)
 
     def test_intraday_kline_builds_signals(self):
         store = FakeMarketReviewStore()

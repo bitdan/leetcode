@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 from db.session import create_session_factory, session_scope
 from market_review.db_models import (
@@ -22,8 +22,8 @@ from market_review.schemas import (
     StockKlineBar,
 )
 from sqlalchemy import delete, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +52,18 @@ class MarketReviewStore:
     def is_available(self) -> bool:
         return bool(self.session_factory)
 
-    def get_review(self, trade_date: str) -> Optional[MarketReviewData]:
+    def get_review(self, trade_date: str, statuses: Optional[Sequence[str]] = None) -> Optional[MarketReviewData]:
         if not self.session_factory:
             return None
         try:
             with session_scope(self.session_factory) as session:
                 parsed_date = self._parse_date(trade_date)
+                allowed_statuses = tuple(statuses or ("success", "final"))
                 run = session.scalar(
                     select(MarketReviewRun).where(
                         MarketReviewRun.trade_date == parsed_date,
                         MarketReviewRun.source == "akshare",
-                        MarketReviewRun.status == "success",
+                        MarketReviewRun.status.in_(allowed_statuses),
                     )
                 )
                 if not run:
@@ -106,7 +107,7 @@ class MarketReviewStore:
             self._mark_unavailable(exc)
         return None
 
-    def save_review(self, data: MarketReviewData) -> None:
+    def save_review(self, data: MarketReviewData, status: str = "final") -> None:
         self._ensure_available()
         try:
             with session_scope(self.session_factory) as session:
@@ -120,7 +121,7 @@ class MarketReviewStore:
                 ):
                     session.execute(delete(model).where(model.trade_date == parsed_date))
 
-                session.add(MarketReviewRun(trade_date=parsed_date, source="akshare", status="success"))
+                session.add(MarketReviewRun(trade_date=parsed_date, source="akshare", status=status))
                 session.add_all([self._stock_to_row(parsed_date, item) for item in data.limit_up_pool])
                 session.add_all([self._sector_to_row(parsed_date, item) for item in data.sector_strength])
                 session.add_all([self._candidate_to_row(parsed_date, item) for item in data.advancement_candidates])

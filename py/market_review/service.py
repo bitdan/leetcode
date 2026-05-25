@@ -1,8 +1,9 @@
+import asyncio
 import logging
 import math
 import re
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from time import monotonic
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,30 +27,41 @@ class MarketReviewUnavailable(RuntimeError):
     pass
 
 
+SNAPSHOT_INTRADAY = "intraday"
+SNAPSHOT_FINAL = "final"
+SNAPSHOT_LEGACY_SUCCESS = "success"
+FINAL_SNAPSHOT_TIME = time(15, 10)
+
+
 class MarketReviewService:
     def __init__(self, store: Optional[MarketReviewStore] = None, cache_ttl_seconds: int = 300):
         self.store = store
         self.cache_ttl_seconds = cache_ttl_seconds
         self._limit_up_cache: Dict[str, Tuple[float, List[LimitUpStock]]] = {}
-        self._review_cache: Dict[str, Tuple[float, MarketReviewData]] = {}
+        self._review_cache: Dict[str, Tuple[float, MarketReviewData, str]] = {}
+        self._final_snapshot_task: Optional[asyncio.Task] = None
 
     def review(self, trading_date: Optional[str] = None, refresh: bool = False) -> MarketReviewData:
         normalized_date = self._normalize_date(trading_date)
+        snapshot_status = self._snapshot_status(normalized_date)
         if not refresh:
-            cached = self._get_cached(self._review_cache, normalized_date)
+            cached = self._get_cached_review(normalized_date, snapshot_status)
             if cached is not None:
                 return cached
-            stored = self._get_stored_review(normalized_date)
-            if stored is not None:
-                self._prime_caches(normalized_date, stored)
-                return stored
+            if snapshot_status == SNAPSHOT_FINAL:
+                stored_status = self._get_stored_status(normalized_date)
+                if self._stored_snapshot_can_be_used(normalized_date, stored_status):
+                    stored = self._get_stored_review(normalized_date)
+                    if stored is not None:
+                        self._prime_caches(normalized_date, stored, snapshot_status)
+                        return stored
         try:
-            data = self._build_review(normalized_date, refresh=refresh)
+            data = self._build_review(normalized_date, refresh=True if snapshot_status == SNAPSHOT_FINAL else refresh)
         except Exception as exc:
             self._mark_failed(normalized_date, str(exc))
             raise
-        self._save_review(data)
-        self._prime_caches(normalized_date, data)
+        self._save_review(data, snapshot_status)
+        self._prime_caches(normalized_date, data, snapshot_status)
         return data
 
     def _build_review(self, normalized_date: str, refresh: bool = False) -> MarketReviewData:
@@ -260,19 +272,29 @@ class MarketReviewService:
         if not self.store or not self.store.is_available():
             return None
         try:
-            return self.store.get_review(normalized_date)
+            statuses = [SNAPSHOT_FINAL, SNAPSHOT_LEGACY_SUCCESS]
+            return self.store.get_review(normalized_date, statuses=statuses)
         except MarketReviewStoreUnavailable as exc:
             logger.warning("Market review snapshot load skipped for %s: %s", normalized_date, exc)
             return None
 
-    def _save_review(self, data: MarketReviewData) -> None:
+    def _save_review(self, data: MarketReviewData, status: str) -> None:
         if not self.store or not self.store.is_available():
             return
         try:
-            self.store.save_review(data)
+            self.store.save_review(data, status=status)
         except MarketReviewStoreUnavailable as exc:
             logger.warning("Market review snapshot save skipped for %s: %s", data.date, exc)
             return
+
+    def _get_stored_status(self, normalized_date: str) -> Optional[dict]:
+        if not self.store or not self.store.is_available():
+            return None
+        try:
+            return self.store.status(normalized_date)
+        except MarketReviewStoreUnavailable as exc:
+            logger.warning("Market review status lookup skipped for %s: %s", normalized_date, exc)
+            return None
 
     def _mark_failed(self, normalized_date: str, message: str) -> None:
         if not self.store or not self.store.is_available():
@@ -285,22 +307,29 @@ class MarketReviewService:
 
     def status(self, trading_date: Optional[str] = None) -> Optional[dict]:
         normalized_date = self._normalize_date(trading_date)
+        expected_status = self._snapshot_status(normalized_date)
         if not self.store:
-            return {"date": normalized_date, "status": "store_missing"}
+            return {"date": normalized_date, "status": "store_missing", "expected_status": expected_status}
         if not self.store.is_available():
             return {
                 "date": normalized_date,
                 "status": "store_unavailable",
+                "expected_status": expected_status,
                 "error_message": self.store.unavailable_reason or "市场复盘存储不可用",
             }
         try:
-            stored = self.store.status(normalized_date)
-            return stored or {"date": normalized_date, "status": "missing"}
+            stored = self._get_stored_status(normalized_date)
+            if stored:
+                stored["expected_status"] = expected_status
+                stored["is_final"] = self._stored_snapshot_can_be_used(normalized_date, stored)
+                return stored
+            return {"date": normalized_date, "status": "missing", "expected_status": expected_status}
         except MarketReviewStoreUnavailable as exc:
             logger.warning("Market review status lookup skipped for %s: %s", normalized_date, exc)
             return {
                 "date": normalized_date,
                 "status": "store_unavailable",
+                "expected_status": expected_status,
                 "error_message": str(exc),
             }
 
@@ -372,8 +401,8 @@ class MarketReviewService:
             intraday_signals=intraday_signals,
         )
 
-    def _prime_caches(self, normalized_date: str, data: MarketReviewData) -> None:
-        self._review_cache[normalized_date] = (monotonic(), data)
+    def _prime_caches(self, normalized_date: str, data: MarketReviewData, status: str = SNAPSHOT_FINAL) -> None:
+        self._review_cache[normalized_date] = (monotonic(), data, status)
         self._limit_up_cache[normalized_date] = (monotonic(), data.limit_up_pool)
 
     def _get_cached(self, cache: Dict[str, Tuple[float, Any]], key: str) -> Optional[Any]:
@@ -385,6 +414,84 @@ class MarketReviewService:
             return value
         cache.pop(key, None)
         return None
+
+    def _get_cached_review(self, normalized_date: str, expected_status: str) -> Optional[MarketReviewData]:
+        cached = self._review_cache.get(normalized_date)
+        if not cached:
+            return None
+        created_at, value, status = cached
+        if monotonic() - created_at > self.cache_ttl_seconds:
+            self._review_cache.pop(normalized_date, None)
+            return None
+        if expected_status == SNAPSHOT_FINAL and status != SNAPSHOT_FINAL:
+            return None
+        return value
+
+    def _snapshot_status(self, normalized_date: str) -> str:
+        trade_date = datetime.strptime(normalized_date, "%Y-%m-%d").date()
+        now = self._now()
+        if trade_date == now.date() and now.time() < FINAL_SNAPSHOT_TIME:
+            return SNAPSHOT_INTRADAY
+        return SNAPSHOT_FINAL
+
+    def _stored_snapshot_can_be_used(self, normalized_date: str, stored_status: Optional[dict]) -> bool:
+        if not stored_status:
+            return False
+        status = stored_status.get("status")
+        if status == SNAPSHOT_FINAL:
+            return True
+        if status != SNAPSHOT_LEGACY_SUCCESS:
+            return False
+        trade_date = datetime.strptime(normalized_date, "%Y-%m-%d").date()
+        if trade_date != self._now().date():
+            return True
+        generated_at = self._parse_datetime(stored_status.get("generated_at"))
+        return bool(generated_at and generated_at.time() >= FINAL_SNAPSHOT_TIME)
+
+    @staticmethod
+    def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    async def start_final_snapshot_scheduler(self) -> None:
+        if self._final_snapshot_task and not self._final_snapshot_task.done():
+            return
+        self._final_snapshot_task = asyncio.create_task(self._run_final_snapshot_scheduler())
+
+    async def stop_final_snapshot_scheduler(self) -> None:
+        if not self._final_snapshot_task:
+            return
+        self._final_snapshot_task.cancel()
+        try:
+            await self._final_snapshot_task
+        except asyncio.CancelledError:
+            pass
+        self._final_snapshot_task = None
+
+    async def _run_final_snapshot_scheduler(self) -> None:
+        while True:
+            await asyncio.sleep(self._seconds_until_next_final_snapshot())
+            today = self._now().strftime("%Y-%m-%d")
+            try:
+                await asyncio.to_thread(self.review, today, True)
+                logger.info("Market review final snapshot refreshed for %s", today)
+            except Exception:
+                logger.warning("Market review final snapshot refresh failed for %s", today, exc_info=True)
+
+    def _seconds_until_next_final_snapshot(self) -> float:
+        now = self._now()
+        next_run = datetime.combine(now.date(), FINAL_SNAPSHOT_TIME)
+        if now >= next_run:
+            next_run = next_run + timedelta(days=1)
+        return max(1.0, (next_run - now).total_seconds())
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now()
 
     @staticmethod
     def _normalize_pool_type(value: str) -> str:

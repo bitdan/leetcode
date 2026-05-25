@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS market_review_runs
     id BIGSERIAL PRIMARY KEY,
     trade_date    DATE        NOT NULL,
     source        VARCHAR(32) NOT NULL DEFAULT 'akshare',
-    status        VARCHAR(32) NOT NULL DEFAULT 'success',
+    status VARCHAR(32) NOT NULL DEFAULT 'final',
     error_message TEXT,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

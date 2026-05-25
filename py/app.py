@@ -25,9 +25,11 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await container.chat_service.start()
+        await container.market_review_service.start_final_snapshot_scheduler()
         try:
             yield
         finally:
+            await container.market_review_service.stop_final_snapshot_scheduler()
             await container.chat_service.stop()
             container.user_service.close()
             container.post_service.close()

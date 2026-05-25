@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -177,7 +178,9 @@ class FakeMarketReviewStore:
         self.stored_review = stored_review
         self.available = available
         self.saved_reviews = []
+        self.saved_statuses = []
         self.failed_marks = []
+        self.get_review_calls = []
         self.status_payload = None
         self.kline_bars = []
         self.intraday_bars = []
@@ -188,11 +191,13 @@ class FakeMarketReviewStore:
     def is_available(self):
         return self.available
 
-    def get_review(self, trade_date):
+    def get_review(self, trade_date, statuses=None):
+        self.get_review_calls.append((trade_date, statuses))
         return self.stored_review if self.stored_review and self.stored_review.date == trade_date else None
 
-    def save_review(self, data):
+    def save_review(self, data, status="final"):
         self.saved_reviews.append(data)
+        self.saved_statuses.append(status)
 
     def mark_failed(self, trade_date, message):
         self.failed_marks.append((trade_date, message))
@@ -251,6 +256,55 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual("2026-05-22", result.date)
         self.assertEqual(1, len(store.saved_reviews))
         self.assertEqual("2026-05-22", store.saved_reviews[0].date)
+        self.assertEqual("final", store.saved_statuses[0])
+
+    def test_today_intraday_ignores_stored_snapshot_and_saves_intraday(self):
+        stored = build_review_data("2026-05-25")
+        store = FakeMarketReviewStore(stored_review=stored)
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        service._now = lambda: datetime(2026, 5, 25, 12, 0, 0)
+        built = build_review_data("2026-05-25")
+        built.limit_up_pool[0].code = "000002"
+        service._build_review = lambda *args, **kwargs: built
+
+        result = service.review("2026-05-25")
+
+        self.assertEqual("000002", result.limit_up_pool[0].code)
+        self.assertEqual([], store.get_review_calls)
+        self.assertEqual("intraday", store.saved_statuses[0])
+
+    def test_today_after_cutoff_rebuilds_intraday_cache_as_final(self):
+        store = FakeMarketReviewStore()
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        intraday = build_review_data("2026-05-25")
+        service._prime_caches("2026-05-25", intraday, status="intraday")
+        service._now = lambda: datetime(2026, 5, 25, 15, 11, 0)
+        final = build_review_data("2026-05-25")
+        final.limit_up_pool[0].code = "000003"
+        service._build_review = lambda *args, **kwargs: final
+
+        result = service.review("2026-05-25")
+
+        self.assertEqual("000003", result.limit_up_pool[0].code)
+        self.assertEqual("final", store.saved_statuses[0])
+
+    def test_today_after_cutoff_rebuilds_legacy_noon_success_snapshot(self):
+        store = FakeMarketReviewStore(stored_review=build_review_data("2026-05-25"))
+        store.status_payload = {
+            "date": "2026-05-25",
+            "status": "success",
+            "generated_at": "2026-05-25T12:00:00",
+        }
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        service._now = lambda: datetime(2026, 5, 25, 15, 11, 0)
+        final = build_review_data("2026-05-25")
+        final.limit_up_pool[0].code = "000004"
+        service._build_review = lambda *args, **kwargs: final
+
+        result = service.review("2026-05-25")
+
+        self.assertEqual("000004", result.limit_up_pool[0].code)
+        self.assertEqual("final", store.saved_statuses[0])
 
     def test_review_marks_failed_when_build_raises(self):
         store = FakeMarketReviewStore()

@@ -10,11 +10,18 @@ def create_router(container) -> APIRouter:
     def dump_model(model) -> dict:
         return model.model_dump(mode="json") if hasattr(model, "model_dump") else model.dict()
 
+    def dump_review(data) -> dict:
+        payload = dump_model(data)
+        snapshot_status = service._snapshot_status(data.date)
+        payload["snapshot_status"] = snapshot_status
+        payload["is_final"] = snapshot_status == "final"
+        return payload
+
     @router.get("", response_model=ApiResponse)
     async def review(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
             data = service.review(date or None, refresh=refresh)
-            return ApiResponse(code=200, msg="获取市场复盘成功", data=dump_model(data))
+            return ApiResponse(code=200, msg="获取市场复盘成功", data=dump_review(data))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
@@ -34,7 +41,7 @@ def create_router(container) -> APIRouter:
     async def refresh(date: str = Query(default="")):
         try:
             data = service.review(date or None, refresh=True)
-            return ApiResponse(code=200, msg="市场复盘快照已刷新", data=dump_model(data))
+            return ApiResponse(code=200, msg="市场复盘快照已刷新", data=dump_review(data))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:

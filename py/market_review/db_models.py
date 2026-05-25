@@ -17,7 +17,7 @@ class MarketReviewRun(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'akshare'"))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'success'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'final'"))
     error_message: Mapped[str | None] = mapped_column(Text)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                    server_default=text("NOW()"))

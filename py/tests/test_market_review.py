@@ -400,6 +400,46 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(1, len(bars))
         self.assertEqual(10.5, bars[0].close_price)
 
+    def test_daily_kline_falls_back_to_sina_when_eastmoney_empty(self):
+        class FakeAkshare:
+            calls = []
+
+            @staticmethod
+            def stock_zh_a_hist(**kwargs):
+                FakeAkshare.calls.append(("eastmoney", kwargs["symbol"]))
+                return FakeFrame([])
+
+            @staticmethod
+            def stock_zh_a_daily(**kwargs):
+                FakeAkshare.calls.append(("sina", kwargs["symbol"]))
+                return FakeFrame([{
+                    "date": "2026-05-22",
+                    "open": 10.0,
+                    "close": 10.5,
+                    "high": 10.8,
+                    "low": 9.9,
+                    "volume": 1200,
+                    "amount": 12600,
+                }])
+
+        service = MarketReviewService()
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare):
+            bars = service._fetch_stock_kline_daily("600001", "2026-05-22", 1)
+
+        self.assertIn(("sina", "sh600001"), FakeAkshare.calls)
+        self.assertEqual(1, len(bars))
+        self.assertEqual("2026-05-22", bars[0].trade_date)
+
+    def test_stock_kline_allows_single_daily_bar(self):
+        store = FakeMarketReviewStore()
+        store.kline_bars = build_kline_bars()
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+
+        result = service.stock_kline("000001", "2026-05-22", limit=1)
+
+        self.assertEqual(1, len(result.bars))
+        self.assertEqual("2026-05-22", result.bars[0].trade_date)
+
     def test_daily_kline_skips_bad_rows(self):
         class FakeAkshare:
             @staticmethod

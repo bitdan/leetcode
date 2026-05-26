@@ -124,7 +124,7 @@ def create_router(container) -> APIRouter:
     async def stock_kline(
             code: str,
             date: str = Query(default=""),
-            limit: int = Query(default=120, ge=30, le=240),
+            limit: int = Query(default=120, ge=1, le=240),
             refresh: bool = Query(default=False),
             name: str = Query(default=""),
             period: str = Query(default="day"),

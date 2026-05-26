@@ -345,7 +345,7 @@ class MarketReviewService:
         normalized_code = self._normalize_code(code)
         normalized_date = self._normalize_date(trading_date)
         normalized_period = self._normalize_kline_period(period)
-        normalized_limit = max(16, min(limit, 240))
+        normalized_limit = max(1, min(limit, 240))
         bars: List[StockKlineBar] = []
 
         if normalized_period == "day":
@@ -689,7 +689,8 @@ class MarketReviewService:
 
     def _fetch_stock_kline_daily(self, code: str, normalized_date: str, limit: int) -> List[StockKlineBar]:
         ak = self._load_akshare()
-        start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=limit * 3)).strftime("%Y%m%d")
+        lookback_days = max(limit * 3, 90)
+        start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y%m%d")
         end_date = normalized_date.replace("-", "")
         attempts = [
             ("eastmoney-qfq", lambda: ak.stock_zh_a_hist(
@@ -709,6 +710,21 @@ class MarketReviewService:
                 timeout=15,
             )),
         ]
+        if hasattr(ak, "stock_zh_a_daily"):
+            attempts.extend([
+                ("sina-qfq", lambda: ak.stock_zh_a_daily(
+                    symbol=self._market_symbol(code),
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust="qfq",
+                )),
+                ("sina-raw", lambda: ak.stock_zh_a_daily(
+                    symbol=self._market_symbol(code),
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust="",
+                )),
+            ])
         if hasattr(ak, "stock_zh_a_hist_tx"):
             attempts.extend([
                 ("tencent-qfq", lambda: ak.stock_zh_a_hist_tx(
@@ -777,6 +793,14 @@ class MarketReviewService:
         return f"sh{code}" if code.startswith(("5", "6", "9")) else f"sz{code}"
 
     @staticmethod
+    def _market_symbol(code: str) -> str:
+        if code.startswith(("4", "8")):
+            return f"bj{code}"
+        if code.startswith(("5", "6", "9")):
+            return f"sh{code}"
+        return f"sz{code}"
+
+    @staticmethod
     def _rows_to_kline_bars(rows: List[Dict[str, Any]], converter, source: str, code: str) -> List[StockKlineBar]:
         bars: List[StockKlineBar] = []
         for row in rows:
@@ -792,7 +816,7 @@ class MarketReviewService:
         return bars
 
     def _row_to_kline_bar(self, row: Dict[str, Any]) -> StockKlineBar:
-        trade_date = self._normalize_hist_date(self._pick(row, "日期", "trade_date"))
+        trade_date = self._normalize_hist_date(self._pick(row, "日期", "trade_date", "date"))
         return StockKlineBar(
             trade_date=trade_date,
             open_price=self._to_float(self._pick(row, "开盘", "open")) or 0,

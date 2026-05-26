@@ -11,6 +11,7 @@ from market_review.schemas import (
     CandidateStock,
     DivergenceConsensusSignal,
     LimitUpStock,
+    MarketEnvironment,
     MarketReviewData,
     SectorStrength,
     StockKlineBar,
@@ -704,6 +705,85 @@ class MarketReviewServiceTest(unittest.TestCase):
 
         self.assertGreater(candidate_map["000001"].candidate_score, candidate_map["000003"].candidate_score + 20)
         self.assertNotEqual("高关注", candidate_map["000003"].level)
+
+    def test_market_environment_fetches_realtime_snapshot_for_today(self):
+        class FakeAkshare:
+            @staticmethod
+            def stock_zh_a_spot_em():
+                return FakeFrame([
+                    {"代码": "000001", "名称": "强势股", "最新价": 11.0, "涨跌幅": 10.01, "成交额": 100_000_000},
+                    {"代码": "000002", "名称": "上涨股", "最新价": 8.0, "涨跌幅": 3.2, "成交额": 80_000_000},
+                    {"代码": "000003", "名称": "下跌股", "最新价": 7.0, "涨跌幅": -2.1, "成交额": 60_000_000},
+                    {"代码": "000004", "名称": "跌停股", "最新价": 6.0, "涨跌幅": -10.0, "成交额": 50_000_000},
+                ])
+
+        service = MarketReviewService()
+        service._now = lambda: datetime(2026, 5, 25, 11, 0, 0)
+        pool = [
+            LimitUpStock(code="000001", name="强势股", industry="算力", consecutive_boards=2),
+        ]
+
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare):
+            environment = service.market_environment("2026-05-25", pool, refresh=True)
+
+        self.assertEqual("stock_zh_a_spot_em", environment.source)
+        self.assertEqual(290_000_000, environment.total_amount)
+        self.assertEqual(2, environment.rise_count)
+        self.assertEqual(2, environment.fall_count)
+        self.assertEqual(1, environment.limit_down_count)
+        self.assertGreater(environment.environment_score, 0)
+
+    def test_market_environment_uses_pool_fallback_for_history(self):
+        service = MarketReviewService()
+        service._now = lambda: datetime(2026, 5, 25, 11, 0, 0)
+        pool = [
+            LimitUpStock(
+                code="000001",
+                name="历史涨停",
+                industry="机器人",
+                amount=100_000_000,
+                consecutive_boards=3,
+            )
+        ]
+
+        environment = service.market_environment("2026-05-22", pool, refresh=True)
+
+        self.assertEqual("limit_up_pool", environment.source)
+        self.assertEqual(100_000_000, environment.total_amount)
+        self.assertEqual(1, environment.limit_up_count)
+        self.assertEqual(3, environment.max_boards)
+
+    def test_market_environment_score_uses_real_breadth_and_limit_ratio(self):
+        service = MarketReviewService()
+        pool = [
+            LimitUpStock(code="000001", name="龙头", industry="机器人", consecutive_boards=3),
+            LimitUpStock(code="000002", name="助攻", industry="机器人", consecutive_boards=2),
+        ]
+        strong = MarketEnvironment(
+            trade_date="2026-05-25",
+            total_amount=2_800_000_000_000,
+            rise_count=3600,
+            fall_count=1200,
+            limit_up_count=90,
+            limit_down_count=3,
+            max_boards=5,
+            source="test",
+        )
+        weak = MarketEnvironment(
+            trade_date="2026-05-25",
+            total_amount=700_000_000_000,
+            rise_count=1200,
+            fall_count=3600,
+            limit_up_count=20,
+            limit_down_count=30,
+            max_boards=2,
+            source="test",
+        )
+
+        strong.environment_score = service._calculate_market_environment_score(strong, pool)
+        weak.environment_score = service._calculate_market_environment_score(weak, pool)
+
+        self.assertGreater(strong.environment_score, weak.environment_score + 30)
 
 
 if __name__ == "__main__":

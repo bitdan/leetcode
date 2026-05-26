@@ -57,6 +57,20 @@ class DivergenceConsensusSignal(BaseModel):
     risks: List[str] = Field(default_factory=list)
 
 
+class MarketEnvironment(BaseModel):
+    trade_date: str
+    total_amount: float = 0
+    amount_change_percent: float = 0
+    rise_count: int = 0
+    fall_count: int = 0
+    flat_count: int = 0
+    limit_up_count: int = 0
+    limit_down_count: int = 0
+    max_boards: int = 1
+    environment_score: float = 0
+    source: str = "fallback"
+
+
 class MarketReviewData(BaseModel):
     date: str
     limit_up_pool: List[LimitUpStock] = Field(default_factory=list)
@@ -64,6 +78,7 @@ class MarketReviewData(BaseModel):
     advancement_candidates: List[CandidateStock] = Field(default_factory=list)
     candidates_2_to_3: List[CandidateStock] = Field(default_factory=list)
     divergence_consensus: List[DivergenceConsensusSignal] = Field(default_factory=list)
+    market_environment: Optional[MarketEnvironment] = None
 
 
 class StockKlineBar(BaseModel):

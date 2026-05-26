@@ -12,6 +12,7 @@ from market_review.schemas import (
     DivergenceConsensusSignal,
     IntradayTradingSignal,
     LimitUpStock,
+    MarketEnvironment,
     MarketReviewData,
     SectorStrength,
     StockKlineBar,
@@ -39,6 +40,7 @@ class MarketReviewService:
         self.cache_ttl_seconds = cache_ttl_seconds
         self._limit_up_cache: Dict[str, Tuple[float, List[LimitUpStock]]] = {}
         self._review_cache: Dict[str, Tuple[float, MarketReviewData, str]] = {}
+        self._environment_cache: Dict[str, Tuple[float, MarketEnvironment]] = {}
         self._final_snapshot_task: Optional[asyncio.Task] = None
 
     def review(self, trading_date: Optional[str] = None, refresh: bool = False) -> MarketReviewData:
@@ -66,9 +68,10 @@ class MarketReviewService:
 
     def _build_review(self, normalized_date: str, refresh: bool = False) -> MarketReviewData:
         pool = self.limit_up_pool(normalized_date, refresh=refresh)
-        sectors = self.sector_strength(normalized_date, pool)
-        advancement_candidates = self.advancement_candidates(normalized_date, pool, sectors)
-        signals = self.divergence_consensus(normalized_date, pool, sectors)
+        environment = self.market_environment(normalized_date, pool, refresh=refresh)
+        sectors = self.sector_strength(normalized_date, pool, environment)
+        advancement_candidates = self.advancement_candidates(normalized_date, pool, sectors, environment)
+        signals = self.divergence_consensus(normalized_date, pool, sectors, environment)
         return MarketReviewData(
             date=normalized_date,
             limit_up_pool=pool,
@@ -76,6 +79,7 @@ class MarketReviewService:
             advancement_candidates=advancement_candidates,
             candidates_2_to_3=[item for item in advancement_candidates if item.pool_type == "2_to_3"],
             divergence_consensus=signals,
+            market_environment=environment,
         )
 
     def limit_up_pool(self, trading_date: Optional[str] = None, refresh: bool = False) -> List[LimitUpStock]:
@@ -99,8 +103,10 @@ class MarketReviewService:
             self,
             trading_date: Optional[str] = None,
             pool: Optional[List[LimitUpStock]] = None,
+            environment: Optional[MarketEnvironment] = None,
     ) -> List[SectorStrength]:
         stocks = pool if pool is not None else self.limit_up_pool(trading_date)
+        env = environment or self.market_environment(trading_date, stocks)
         grouped: Dict[str, List[LimitUpStock]] = defaultdict(list)
         for stock in stocks:
             grouped[stock.industry or "未分类"].append(stock)
@@ -113,7 +119,7 @@ class MarketReviewService:
             total_amount = sum(item.amount or 0 for item in items)
             max_boards = max((item.consecutive_boards for item in items), default=1)
             core = sorted(items, key=lambda item: (-item.consecutive_boards, -item.board_quality_score))[:3]
-            score = self._sector_strength_score(items)
+            score = self._sector_strength_score(items, env)
             risks = []
             if open_count >= max(2, len(items)):
                 risks.append("炸板偏多")
@@ -141,11 +147,12 @@ class MarketReviewService:
             trading_date: Optional[str] = None,
             pool: Optional[List[LimitUpStock]] = None,
             sectors: Optional[List[SectorStrength]] = None,
+            environment: Optional[MarketEnvironment] = None,
     ) -> List[CandidateStock]:
         normalized = self._normalize_pool_type(pool_type)
         return [
             item
-            for item in self.advancement_candidates(trading_date, pool, sectors)
+            for item in self.advancement_candidates(trading_date, pool, sectors, environment)
             if item.pool_type == normalized
         ]
 
@@ -154,17 +161,20 @@ class MarketReviewService:
             trading_date: Optional[str] = None,
             pool: Optional[List[LimitUpStock]] = None,
             sectors: Optional[List[SectorStrength]] = None,
+            environment: Optional[MarketEnvironment] = None,
     ) -> List[CandidateStock]:
-        return self.candidates_by_pool_type("2_to_3", trading_date, pool, sectors)
+        return self.candidates_by_pool_type("2_to_3", trading_date, pool, sectors, environment)
 
     def advancement_candidates(
             self,
             trading_date: Optional[str] = None,
             pool: Optional[List[LimitUpStock]] = None,
             sectors: Optional[List[SectorStrength]] = None,
+            environment: Optional[MarketEnvironment] = None,
     ) -> List[CandidateStock]:
         stocks = pool if pool is not None else self.limit_up_pool(trading_date)
-        sector_list = sectors if sectors is not None else self.sector_strength(trading_date, stocks)
+        env = environment or self.market_environment(trading_date, stocks)
+        sector_list = sectors if sectors is not None else self.sector_strength(trading_date, stocks, env)
         sector_map = {item.industry: item for item in sector_list}
         candidates: List[CandidateStock] = []
 
@@ -174,7 +184,7 @@ class MarketReviewService:
             target_boards = stock.consecutive_boards + 1
             pool_type = f"{stock.consecutive_boards}_to_{target_boards}"
             sector = sector_map.get(stock.industry or "未分类")
-            score = self._candidate_score(stock, sector, stocks)
+            score = self._candidate_score(stock, sector, stocks, env)
             reasons = []
             risks = list(stock.tags)
             if sector and sector.limit_up_count >= 3:
@@ -213,9 +223,11 @@ class MarketReviewService:
             trading_date: Optional[str] = None,
             pool: Optional[List[LimitUpStock]] = None,
             sectors: Optional[List[SectorStrength]] = None,
+            environment: Optional[MarketEnvironment] = None,
     ) -> List[DivergenceConsensusSignal]:
         stocks = pool if pool is not None else self.limit_up_pool(trading_date)
-        sector_list = sectors if sectors is not None else self.sector_strength(trading_date, stocks)
+        env = environment or self.market_environment(trading_date, stocks)
+        sector_list = sectors if sectors is not None else self.sector_strength(trading_date, stocks, env)
         sector_map = {item.industry: item for item in sector_list}
         signals: List[DivergenceConsensusSignal] = []
 
@@ -234,7 +246,7 @@ class MarketReviewService:
                 reasons.append("同板块涨停家数形成回流")
             if sector and sector.advanced_count >= 2:
                 reasons.append("板块连板梯队仍在")
-            score = self._divergence_signal_score(stock, sector, stocks)
+            score = self._divergence_signal_score(stock, sector, stocks, env)
             if open_count >= 4:
                 risks.append("分歧过大")
             if stock.first_limit_time and stock.first_limit_time >= "143000":
@@ -250,6 +262,29 @@ class MarketReviewService:
                     risks=risks,
                 ))
         return sorted(signals, key=lambda item: item.signal_score, reverse=True)
+
+    def market_environment(
+            self,
+            trading_date: Optional[str] = None,
+            pool: Optional[List[LimitUpStock]] = None,
+            refresh: bool = False,
+    ) -> MarketEnvironment:
+        normalized_date = self._normalize_date(trading_date)
+        stocks = pool if pool is not None else self.limit_up_pool(normalized_date)
+        cached = None if refresh else self._get_cached(self._environment_cache, normalized_date)
+        if cached is not None:
+            return cached
+
+        environment: Optional[MarketEnvironment] = None
+        if normalized_date == self._now().strftime("%Y-%m-%d"):
+            try:
+                environment = self._fetch_market_environment(normalized_date, stocks)
+            except Exception as exc:
+                logger.warning("Market environment fetch skipped for %s: %s", normalized_date, exc)
+        if environment is None:
+            environment = self._fallback_market_environment(normalized_date, stocks)
+        self._environment_cache[normalized_date] = (monotonic(), environment)
+        return environment
 
     @staticmethod
     def _load_akshare():
@@ -609,7 +644,11 @@ class MarketReviewService:
         )
         return self._clamp_score(score)
 
-    def _sector_strength_score(self, items: List[LimitUpStock]) -> float:
+    def _sector_strength_score(
+            self,
+            items: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
+    ) -> float:
         if not items:
             return 0.0
         limit_up_count = len(items)
@@ -639,7 +678,7 @@ class MarketReviewService:
                 + leader_quality * 0.20
                 + capital_score * 0.15
                 + persistence_score * 0.10
-                + self._market_environment_score(items) * 0.05
+                + self._market_environment_score(items, environment) * 0.05
                 - risk_penalty
         )
         return self._clamp_score(score)
@@ -649,6 +688,7 @@ class MarketReviewService:
             stock: LimitUpStock,
             sector: Optional[SectorStrength],
             pool: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
     ) -> float:
         sector_score = sector.strength_score if sector else 35.0
         risk_penalty = 0.0
@@ -658,7 +698,7 @@ class MarketReviewService:
             risk_penalty += 8
         if (stock.open_count or 0) >= 3:
             risk_penalty += 12
-        if sector and sector.limit_up_count <= 1 and self._market_environment_score(pool) < 55:
+        if sector and sector.limit_up_count <= 1 and self._market_environment_score(pool, environment) < 55:
             risk_penalty += 8
 
         score = (
@@ -666,7 +706,7 @@ class MarketReviewService:
                 + sector_score * 0.28
                 + self._ladder_position_score(stock, pool) * 0.15
                 + self._next_day_expectation_score(stock, sector, pool) * 0.10
-                + self._market_environment_score(pool) * 0.05
+                + self._market_environment_score(pool, environment) * 0.05
                 - risk_penalty
         )
         return self._clamp_score(score)
@@ -676,6 +716,7 @@ class MarketReviewService:
             stock: LimitUpStock,
             sector: Optional[SectorStrength],
             pool: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
     ) -> float:
         open_count = stock.open_count or 0
         divergence_quality = 0.0
@@ -702,7 +743,7 @@ class MarketReviewService:
                 + self._seal_strength_score(stock) * 0.25
                 + sector_return * 0.25
                 + self._ladder_position_score(stock, pool) * 0.10
-                + self._market_environment_score(pool) * 0.10
+                + self._market_environment_score(pool, environment) * 0.10
                 - risk_penalty
         )
         return self._clamp_score(score)
@@ -817,7 +858,13 @@ class MarketReviewService:
             score -= 12
         return self._clamp_score(score)
 
-    def _market_environment_score(self, pool: List[LimitUpStock]) -> float:
+    def _market_environment_score(
+            self,
+            pool: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
+    ) -> float:
+        if environment is not None and environment.environment_score > 0:
+            return environment.environment_score
         if not pool:
             return 35.0
         limit_up_count = len(pool)
@@ -845,6 +892,140 @@ class MarketReviewService:
             + height_score * 0.15
             + theme_score * 0.10
         )
+
+    def _fetch_market_environment(self, normalized_date: str, pool: List[LimitUpStock]) -> MarketEnvironment:
+        ak = self._load_akshare()
+        if not hasattr(ak, "stock_zh_a_spot_em"):
+            raise MarketReviewUnavailable("行情服务缺少 A 股实时快照接口")
+        frame = ak.stock_zh_a_spot_em()
+        rows = frame.to_dict(orient="records")
+        if not rows:
+            raise MarketReviewUnavailable("A 股实时快照为空")
+
+        total_amount = 0.0
+        rise_count = 0
+        fall_count = 0
+        flat_count = 0
+        limit_up_count = 0
+        limit_down_count = 0
+
+        for row in rows:
+            amount = self._to_float(self._pick(row, "成交额", "amount")) or 0
+            change_percent = self._to_float(self._pick(row, "涨跌幅", "change_percent"))
+            latest_price = self._to_float(self._pick(row, "最新价", "收盘价", "close", "price"))
+            total_amount += amount
+            if change_percent is None:
+                continue
+            if change_percent > 0:
+                rise_count += 1
+            elif change_percent < 0:
+                fall_count += 1
+            else:
+                flat_count += 1
+            if latest_price and latest_price > 0 and change_percent >= self._limit_up_percent_threshold(row):
+                limit_up_count += 1
+            if latest_price and latest_price > 0 and change_percent <= -self._limit_up_percent_threshold(row):
+                limit_down_count += 1
+
+        max_boards = max((item.consecutive_boards for item in pool), default=1)
+        environment = MarketEnvironment(
+            trade_date=normalized_date,
+            total_amount=round(total_amount, 2),
+            rise_count=rise_count,
+            fall_count=fall_count,
+            flat_count=flat_count,
+            limit_up_count=max(limit_up_count, len(pool)),
+            limit_down_count=limit_down_count,
+            max_boards=max_boards,
+            source="stock_zh_a_spot_em",
+        )
+        environment.environment_score = self._calculate_market_environment_score(environment, pool)
+        return environment
+
+    def _fallback_market_environment(self, normalized_date: str, pool: List[LimitUpStock]) -> MarketEnvironment:
+        limit_up_count = len(pool)
+        max_boards = max((item.consecutive_boards for item in pool), default=1)
+        environment = MarketEnvironment(
+            trade_date=normalized_date,
+            total_amount=round(sum(item.amount or 0 for item in pool), 2),
+            limit_up_count=limit_up_count,
+            max_boards=max_boards,
+            source="limit_up_pool",
+        )
+        environment.environment_score = self._calculate_market_environment_score(environment, pool)
+        return environment
+
+    def _calculate_market_environment_score(
+            self,
+            environment: MarketEnvironment,
+            pool: List[LimitUpStock],
+    ) -> float:
+        total_stock_count = environment.rise_count + environment.fall_count + environment.flat_count
+        rise_ratio = environment.rise_count / total_stock_count if total_stock_count > 0 else None
+        limit_up_down_ratio = (
+            environment.limit_up_count / max(environment.limit_down_count, 1)
+            if environment.limit_up_count or environment.limit_down_count
+            else None
+        )
+        top_three_count = 0
+        if pool:
+            grouped: Dict[str, int] = defaultdict(int)
+            for item in pool:
+                grouped[item.industry or "未分类"] += 1
+            top_three_count = sum(sorted(grouped.values(), reverse=True)[:3])
+        concentration = top_three_count / len(pool) if pool else None
+        advanced_ratio = (
+            sum(1 for item in pool if item.consecutive_boards >= 2) / len(pool)
+            if pool else None
+        )
+
+        turnover_heat = self._market_total_amount_score(environment.total_amount)
+        breadth_score = self._ratio_score(
+            rise_ratio,
+            [(0.65, 100), (0.55, 82), (0.48, 64), (0.40, 46), (0.0, 28)],
+        )
+        limit_score = self._ratio_score(
+            limit_up_down_ratio,
+            [(8.0, 100), (4.0, 82), (2.0, 64), (1.0, 46), (0.0, 28)],
+        )
+        height_score = min(environment.max_boards * 18, 100)
+        theme_score = self._ratio_score(concentration, [(0.55, 100), (0.42, 82), (0.30, 64), (0.18, 45), (0.0, 28)])
+        advanced_score = self._ratio_score(
+            advanced_ratio,
+            [(0.35, 100), (0.25, 82), (0.16, 64), (0.08, 46), (0.0, 28)],
+        )
+        return self._clamp_score(
+            turnover_heat * 0.25
+            + breadth_score * 0.20
+            + limit_score * 0.25
+            + height_score * 0.12
+            + theme_score * 0.08
+            + advanced_score * 0.10
+        )
+
+    @staticmethod
+    def _market_total_amount_score(total_amount: float) -> float:
+        if total_amount >= 2_500_000_000_000:
+            return 100.0
+        if total_amount >= 1_800_000_000_000:
+            return 84.0
+        if total_amount >= 1_200_000_000_000:
+            return 68.0
+        if total_amount >= 800_000_000_000:
+            return 52.0
+        if total_amount > 0:
+            return 36.0
+        return 45.0
+
+    @staticmethod
+    def _limit_up_percent_threshold(row: Dict[str, Any]) -> float:
+        name = str(MarketReviewService._pick(row, "名称", "name", "股票简称", default="") or "")
+        code = str(MarketReviewService._pick(row, "代码", "code", "股票代码", default="") or "")
+        if "ST" in name.upper():
+            return 4.8
+        if code.startswith(("688", "300")):
+            return 19.5
+        return 9.8
 
     @staticmethod
     def _limit_up_diffusion_score(limit_up_count: int) -> float:

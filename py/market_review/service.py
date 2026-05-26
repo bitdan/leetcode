@@ -113,18 +113,14 @@ class MarketReviewService:
             total_amount = sum(item.amount or 0 for item in items)
             max_boards = max((item.consecutive_boards for item in items), default=1)
             core = sorted(items, key=lambda item: (-item.consecutive_boards, -item.board_quality_score))[:3]
-            score = (
-                    len(items) * 16
-                    + advanced_count * 12
-                    + max_boards * 8
-                    + self._money_score(total_seal, 8)
-                    - min(open_count * 2.5, 18)
-            )
+            score = self._sector_strength_score(items)
             risks = []
             if open_count >= max(2, len(items)):
                 risks.append("炸板偏多")
             if len(items) == 1:
                 risks.append("板块跟随不足")
+            if len(core) == 1 or (core and core[0].board_quality_score - core[-1].board_quality_score > 35):
+                risks.append("核心断层明显")
             sectors.append(SectorStrength(
                 industry=industry,
                 limit_up_count=len(items),
@@ -178,14 +174,15 @@ class MarketReviewService:
             target_boards = stock.consecutive_boards + 1
             pool_type = f"{stock.consecutive_boards}_to_{target_boards}"
             sector = sector_map.get(stock.industry or "未分类")
-            ladder_bonus = min(stock.consecutive_boards * 4, 16)
-            score = stock.board_quality_score + ((sector.strength_score if sector else 0) * 0.35) + ladder_bonus
+            score = self._candidate_score(stock, sector, stocks)
             reasons = []
             risks = list(stock.tags)
             if sector and sector.limit_up_count >= 3:
                 reasons.append("板块涨停家数靠前")
             if sector and sector.advanced_count >= 2:
                 reasons.append("板块有连板梯队")
+            if self._is_sector_leader(stock, stocks):
+                reasons.append("板块梯队前排")
             if stock.first_limit_time and stock.first_limit_time <= "103000":
                 reasons.append("封板时间较早")
             if (stock.open_count or 0) == 0:
@@ -196,8 +193,8 @@ class MarketReviewService:
                 risks.append("封单额相对成交额偏弱")
             if stock.first_limit_time and stock.first_limit_time >= "143000":
                 risks.append("尾盘封板")
-            level = "高关注" if score >= 82 and len(risks) <= 1 else "观察"
-            if score < 55 or len(risks) >= 3:
+            level = "高关注" if score >= 80 and len(risks) <= 1 and "尾盘封板" not in risks else "观察"
+            if score < 60 or len(risks) >= 3:
                 level = "剔除"
             candidates.append(CandidateStock(
                 stock=stock,
@@ -227,28 +224,22 @@ class MarketReviewService:
             open_count = stock.open_count or 0
             reasons = []
             risks = []
-            score = 0.0
             phase = "一致"
             if open_count > 0:
                 phase = "分歧转一致"
-                score += min(open_count * 8, 24)
                 reasons.append("盘中炸板后回封")
             if stock.last_limit_time and stock.first_limit_time and stock.last_limit_time > stock.first_limit_time:
-                score += 10
                 reasons.append("最后封板晚于首次封板")
             if sector and sector.limit_up_count >= 3:
-                score += 24
                 reasons.append("同板块涨停家数形成回流")
             if sector and sector.advanced_count >= 2:
-                score += 16
                 reasons.append("板块连板梯队仍在")
-            if stock.seal_amount:
-                score += self._money_score(stock.seal_amount, 12)
+            score = self._divergence_signal_score(stock, sector, stocks)
             if open_count >= 4:
                 risks.append("分歧过大")
             if stock.first_limit_time and stock.first_limit_time >= "143000":
                 risks.append("尾盘一致性待确认")
-            if phase == "分歧转一致" or score >= 45:
+            if phase == "分歧转一致" or score >= 55:
                 signals.append(DivergenceConsensusSignal(
                     code=stock.code,
                     name=stock.name,
@@ -607,23 +598,317 @@ class MarketReviewService:
         return stock
 
     def _quality_score(self, stock: LimitUpStock) -> float:
-        score = 45.0 + min(stock.consecutive_boards * 6, 24)
-        if stock.first_limit_time:
-            if stock.first_limit_time <= "100000":
-                score += 16
-            elif stock.first_limit_time <= "113000":
-                score += 10
-            elif stock.first_limit_time >= "143000":
-                score -= 10
-        score -= min((stock.open_count or 0) * 6, 24)
-        if stock.seal_amount:
-            score += self._money_score(stock.seal_amount, 12)
-        if stock.turnover_rate:
-            if 3 <= stock.turnover_rate <= 18:
-                score += 8
-            elif stock.turnover_rate > 30:
-                score -= 8
-        return round(max(min(score, 100), 0), 2)
+        score = (
+                self._seal_timing_score(stock) * 0.22
+                + self._seal_stability_score(stock) * 0.18
+                + self._seal_strength_score(stock) * 0.20
+                + self._turnover_structure_score(stock) * 0.15
+                + self._ladder_position_score(stock) * 0.15
+                + 60.0 * 0.10
+                - self._stock_risk_penalty(stock)
+        )
+        return self._clamp_score(score)
+
+    def _sector_strength_score(self, items: List[LimitUpStock]) -> float:
+        if not items:
+            return 0.0
+        limit_up_count = len(items)
+        open_count = sum(item.open_count or 0 for item in items)
+        top_quality = sorted((item.board_quality_score for item in items), reverse=True)[:3]
+        leader_quality = sum(top_quality) / len(top_quality) if top_quality else 0.0
+        total_seal = sum(item.seal_amount or 0 for item in items)
+        total_amount = sum(item.amount or 0 for item in items)
+        seal_amount_ratio = total_seal / total_amount if total_amount > 0 else 0.0
+        open_rate = open_count / max(limit_up_count, 1)
+
+        diffusion_score = self._limit_up_diffusion_score(limit_up_count)
+        ladder_score = self._sector_ladder_completeness_score(items)
+        capital_score = (
+                self._ratio_score(seal_amount_ratio, [(0.10, 100), (0.06, 85), (0.03, 65), (0.015, 45), (0.0, 20)])
+                * 0.65
+                + (self._money_score(total_seal, 10) / 10) * 100 * 0.35
+        )
+        persistence_score = min(max((max(item.consecutive_boards for item in items) - 1) * 22, 25), 100)
+        risk_penalty = min(open_rate * 22, 28)
+        if limit_up_count == 1:
+            risk_penalty += 12
+
+        score = (
+                diffusion_score * 0.25
+                + ladder_score * 0.25
+                + leader_quality * 0.20
+                + capital_score * 0.15
+                + persistence_score * 0.10
+                + self._market_environment_score(items) * 0.05
+                - risk_penalty
+        )
+        return self._clamp_score(score)
+
+    def _candidate_score(
+            self,
+            stock: LimitUpStock,
+            sector: Optional[SectorStrength],
+            pool: List[LimitUpStock],
+    ) -> float:
+        sector_score = sector.strength_score if sector else 35.0
+        risk_penalty = 0.0
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            risk_penalty += 8
+        if stock.seal_amount and stock.amount and stock.seal_amount / max(stock.amount, 1) < 0.03:
+            risk_penalty += 8
+        if (stock.open_count or 0) >= 3:
+            risk_penalty += 12
+        if sector and sector.limit_up_count <= 1 and self._market_environment_score(pool) < 55:
+            risk_penalty += 8
+
+        score = (
+                stock.board_quality_score * 0.42
+                + sector_score * 0.28
+                + self._ladder_position_score(stock, pool) * 0.15
+                + self._next_day_expectation_score(stock, sector, pool) * 0.10
+                + self._market_environment_score(pool) * 0.05
+                - risk_penalty
+        )
+        return self._clamp_score(score)
+
+    def _divergence_signal_score(
+            self,
+            stock: LimitUpStock,
+            sector: Optional[SectorStrength],
+            pool: List[LimitUpStock],
+    ) -> float:
+        open_count = stock.open_count or 0
+        divergence_quality = 0.0
+        if open_count == 1:
+            divergence_quality = 92.0
+        elif open_count == 2:
+            divergence_quality = 72.0
+        elif open_count == 3:
+            divergence_quality = 48.0
+        elif open_count >= 4:
+            divergence_quality = 22.0
+        elif stock.last_limit_time and stock.first_limit_time and stock.last_limit_time > stock.first_limit_time:
+            divergence_quality = 56.0
+
+        sector_return = sector.strength_score if sector else 30.0
+        risk_penalty = 0.0
+        if open_count >= 4:
+            risk_penalty += 18
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            risk_penalty += 10
+
+        score = (
+                divergence_quality * 0.30
+                + self._seal_strength_score(stock) * 0.25
+                + sector_return * 0.25
+                + self._ladder_position_score(stock, pool) * 0.10
+                + self._market_environment_score(pool) * 0.10
+                - risk_penalty
+        )
+        return self._clamp_score(score)
+
+    @staticmethod
+    def _seal_timing_score(stock: LimitUpStock) -> float:
+        first_time = stock.first_limit_time
+        if not first_time:
+            return 45.0
+        if first_time <= "093500":
+            return 100.0
+        if first_time <= "100000":
+            return 88.0
+        if first_time <= "113000":
+            return 70.0
+        if first_time < "143000":
+            return 52.0
+        return 28.0
+
+    @staticmethod
+    def _seal_stability_score(stock: LimitUpStock) -> float:
+        open_count = stock.open_count or 0
+        if open_count <= 0:
+            return 100.0
+        if open_count == 1:
+            return 76.0
+        if open_count == 2:
+            return 52.0
+        if open_count == 3:
+            return 28.0
+        return 12.0
+
+    def _seal_strength_score(self, stock: LimitUpStock) -> float:
+        absolute_score = (self._money_score(stock.seal_amount or 0, 12) / 12) * 100
+        amount_ratio = (stock.seal_amount or 0) / stock.amount if stock.seal_amount and stock.amount else None
+        float_ratio = (
+            (stock.seal_amount or 0) / stock.circulating_market_value
+            if stock.seal_amount and stock.circulating_market_value
+            else None
+        )
+        amount_score = self._ratio_score(
+            amount_ratio,
+            [(0.10, 100), (0.06, 85), (0.03, 65), (0.015, 45), (0.0, 20)],
+        )
+        float_score = self._ratio_score(
+            float_ratio,
+            [(0.005, 100), (0.003, 82), (0.001, 62), (0.0005, 42), (0.0, 20)],
+        )
+        if amount_ratio is None and float_ratio is None:
+            return absolute_score
+        if amount_ratio is None:
+            return float_score * 0.75 + absolute_score * 0.25
+        if float_ratio is None:
+            return amount_score * 0.75 + absolute_score * 0.25
+        return amount_score * 0.55 + float_score * 0.35 + absolute_score * 0.10
+
+    def _turnover_structure_score(self, stock: LimitUpStock) -> float:
+        turnover = stock.turnover_rate
+        if turnover is None:
+            return 50.0
+        market_value = stock.circulating_market_value or 0
+        if market_value and market_value < 5_000_000_000:
+            return self._band_score(turnover, 6, 26, 40)
+        if market_value and market_value >= 20_000_000_000:
+            return self._band_score(turnover, 2, 12, 22)
+        return self._band_score(turnover, 3, 18, 30)
+
+    def _ladder_position_score(self, stock: LimitUpStock, pool: Optional[List[LimitUpStock]] = None) -> float:
+        score = min(stock.consecutive_boards * 18, 72)
+        if not pool:
+            return max(score, 35)
+        market_highest = max((item.consecutive_boards for item in pool), default=stock.consecutive_boards)
+        sector_highest = max(
+            (item.consecutive_boards for item in pool if (item.industry or "未分类") == (stock.industry or "未分类")),
+            default=stock.consecutive_boards,
+        )
+        if stock.consecutive_boards >= market_highest:
+            score += 20
+        elif stock.consecutive_boards >= sector_highest:
+            score += 12
+        if self._is_sector_leader(stock, pool):
+            score += 8
+        return self._clamp_score(score)
+
+    @staticmethod
+    def _is_sector_leader(stock: LimitUpStock, pool: List[LimitUpStock]) -> bool:
+        sector = stock.industry or "未分类"
+        sector_highest = max((item.consecutive_boards for item in pool if (item.industry or "未分类") == sector),
+                             default=0)
+        return stock.consecutive_boards >= sector_highest
+
+    def _next_day_expectation_score(
+            self,
+            stock: LimitUpStock,
+            sector: Optional[SectorStrength],
+            pool: List[LimitUpStock],
+    ) -> float:
+        score = 45.0
+        if stock.first_limit_time and stock.first_limit_time <= "100000":
+            score += 18
+        if (stock.open_count or 0) == 0:
+            score += 14
+        if sector and sector.limit_up_count >= 3:
+            score += 12
+        if sector and sector.advanced_count >= 2:
+            score += 8
+        if self._is_sector_leader(stock, pool):
+            score += 8
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            score -= 18
+        if stock.seal_amount and stock.amount and stock.seal_amount / max(stock.amount, 1) < 0.03:
+            score -= 12
+        return self._clamp_score(score)
+
+    def _market_environment_score(self, pool: List[LimitUpStock]) -> float:
+        if not pool:
+            return 35.0
+        limit_up_count = len(pool)
+        advanced_count = sum(1 for item in pool if item.consecutive_boards >= 2)
+        max_boards = max((item.consecutive_boards for item in pool), default=1)
+        open_count = sum(item.open_count or 0 for item in pool)
+        grouped: Dict[str, int] = defaultdict(int)
+        for item in pool:
+            grouped[item.industry or "未分类"] += 1
+        top_three_count = sum(sorted(grouped.values(), reverse=True)[:3])
+        concentration = top_three_count / limit_up_count
+
+        turnover_heat = self._limit_up_diffusion_score(limit_up_count)
+        breadth = self._ratio_score(
+            advanced_count / limit_up_count,
+            [(0.35, 100), (0.25, 82), (0.16, 64), (0.08, 46), (0.0, 28)],
+        )
+        limit_up_down_proxy = max(20.0, 100.0 - min((open_count / limit_up_count) * 35, 70))
+        height_score = min(max_boards * 18, 100)
+        theme_score = self._ratio_score(concentration, [(0.55, 100), (0.42, 82), (0.30, 64), (0.18, 45), (0.0, 28)])
+        return self._clamp_score(
+            turnover_heat * 0.30
+            + breadth * 0.20
+            + limit_up_down_proxy * 0.25
+            + height_score * 0.15
+            + theme_score * 0.10
+        )
+
+    @staticmethod
+    def _limit_up_diffusion_score(limit_up_count: int) -> float:
+        if limit_up_count >= 100:
+            return 100.0
+        if limit_up_count >= 70:
+            return 84.0
+        if limit_up_count >= 45:
+            return 68.0
+        if limit_up_count >= 25:
+            return 52.0
+        if limit_up_count >= 10:
+            return 36.0
+        return 24.0
+
+    @staticmethod
+    def _sector_ladder_completeness_score(items: List[LimitUpStock]) -> float:
+        boards = {item.consecutive_boards for item in items}
+        score = 20.0
+        if 1 in boards:
+            score += 20
+        if 2 in boards:
+            score += 25
+        if any(board >= 3 for board in boards):
+            score += 30
+        if len(items) >= 3:
+            score += 10
+        return min(score, 100.0)
+
+    @staticmethod
+    def _stock_risk_penalty(stock: LimitUpStock) -> float:
+        penalty = 0.0
+        if (stock.open_count or 0) >= 3:
+            penalty += 12
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            penalty += 10
+        if stock.turnover_rate and stock.turnover_rate > 35:
+            penalty += 8
+        if stock.seal_amount and stock.amount and stock.seal_amount / max(stock.amount, 1) < 0.015:
+            penalty += 8
+        return penalty
+
+    @staticmethod
+    def _band_score(value: float, low: float, high: float, hard_high: float) -> float:
+        if value < low:
+            return max(25.0, 100.0 - (low - value) * 12)
+        if value <= high:
+            return 100.0
+        if value <= hard_high:
+            return max(45.0, 100.0 - (value - high) * 4)
+        return max(10.0, 45.0 - (value - hard_high) * 2)
+
+    @staticmethod
+    def _ratio_score(value: Optional[float], bands: List[Tuple[float, float]]) -> float:
+        if value is None:
+            return 45.0
+        for threshold, score in bands:
+            if value >= threshold:
+                return score
+        return 20.0
+
+    @staticmethod
+    def _clamp_score(value: float) -> float:
+        return round(max(min(value, 100), 0), 2)
 
     @staticmethod
     def _risk_tags(stock: LimitUpStock) -> List[str]:

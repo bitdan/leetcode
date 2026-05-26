@@ -569,6 +569,142 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertTrue(any(item.signal_type == "weak_to_strong" for item in result.intraday_signals))
         self.assertTrue(any(item.signal_type == "reseal" for item in result.intraday_signals))
 
+    def test_v2_quality_score_prefers_early_stable_relative_seal(self):
+        service = MarketReviewService()
+        strong = LimitUpStock(
+            code="000001",
+            name="强势股",
+            industry="算力",
+            turnover_rate=9.5,
+            amount=100_000_000,
+            circulating_market_value=4_000_000_000,
+            seal_amount=8_000_000,
+            first_limit_time="093800",
+            last_limit_time="093800",
+            open_count=0,
+            consecutive_boards=2,
+        )
+        weak = LimitUpStock(
+            code="000002",
+            name="弱势股",
+            industry="算力",
+            turnover_rate=38.0,
+            amount=500_000_000,
+            circulating_market_value=5_000_000_000,
+            seal_amount=3_000_000,
+            first_limit_time="145000",
+            last_limit_time="145500",
+            open_count=3,
+            consecutive_boards=2,
+        )
+
+        self.assertGreater(service._quality_score(strong), service._quality_score(weak) + 35)
+
+    def test_v2_sector_strength_prefers_complete_ladder(self):
+        service = MarketReviewService()
+        complete_ladder = [
+            LimitUpStock(
+                code="000001",
+                name="龙头",
+                industry="机器人",
+                amount=100_000_000,
+                circulating_market_value=4_000_000_000,
+                seal_amount=8_000_000,
+                first_limit_time="093800",
+                open_count=0,
+                consecutive_boards=3,
+                board_quality_score=90,
+            ),
+            LimitUpStock(
+                code="000002",
+                name="中军",
+                industry="机器人",
+                amount=120_000_000,
+                circulating_market_value=8_000_000_000,
+                seal_amount=6_000_000,
+                first_limit_time="100500",
+                open_count=0,
+                consecutive_boards=2,
+                board_quality_score=82,
+            ),
+            LimitUpStock(
+                code="000003",
+                name="助攻",
+                industry="机器人",
+                amount=80_000_000,
+                circulating_market_value=3_000_000_000,
+                seal_amount=4_000_000,
+                first_limit_time="103000",
+                open_count=1,
+                consecutive_boards=1,
+                board_quality_score=72,
+            ),
+        ]
+        isolated = [
+            LimitUpStock(
+                code="000004",
+                name="孤军",
+                industry="零售",
+                amount=80_000_000,
+                circulating_market_value=3_000_000_000,
+                seal_amount=2_000_000,
+                first_limit_time="140000",
+                open_count=1,
+                consecutive_boards=3,
+                board_quality_score=70,
+            )
+        ]
+
+        self.assertGreater(
+            service._sector_strength_score(complete_ladder),
+            service._sector_strength_score(isolated) + 25,
+        )
+
+    def test_v2_candidates_reward_sector_support_and_penalize_late_weak_boards(self):
+        service = MarketReviewService()
+        leader = LimitUpStock(
+            code="000001",
+            name="龙头",
+            industry="算力",
+            amount=100_000_000,
+            circulating_market_value=4_000_000_000,
+            seal_amount=9_000_000,
+            first_limit_time="094000",
+            open_count=0,
+            consecutive_boards=2,
+        )
+        follower = LimitUpStock(
+            code="000002",
+            name="助攻",
+            industry="算力",
+            amount=90_000_000,
+            circulating_market_value=3_000_000_000,
+            seal_amount=5_000_000,
+            first_limit_time="101000",
+            open_count=0,
+            consecutive_boards=1,
+        )
+        weak = LimitUpStock(
+            code="000003",
+            name="尾盘弱板",
+            industry="零售",
+            amount=500_000_000,
+            circulating_market_value=6_000_000_000,
+            seal_amount=2_000_000,
+            first_limit_time="145000",
+            open_count=3,
+            consecutive_boards=2,
+        )
+        pool = [leader, follower, weak]
+        for item in pool:
+            item.board_quality_score = service._quality_score(item)
+        sectors = service.sector_strength("2026-05-22", pool)
+        candidates = service.advancement_candidates("2026-05-22", pool, sectors)
+        candidate_map = {item.stock.code: item for item in candidates}
+
+        self.assertGreater(candidate_map["000001"].candidate_score, candidate_map["000003"].candidate_score + 20)
+        self.assertNotEqual("高关注", candidate_map["000003"].level)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -440,6 +440,77 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(1, len(result.bars))
         self.assertEqual("2026-05-22", result.bars[0].trade_date)
 
+    def test_stock_kline_supports_five_day_period(self):
+        service = MarketReviewService()
+        service._fetch_stock_kline_daily = lambda *args, **kwargs: build_kline_bars()
+        service._fetch_stock_kline_intraday = lambda code, trade_date, period: [
+            StockKlineBar(
+                trade_date=f"{trade_date} 09:30:00",
+                open_price=10.0,
+                close_price=10.1,
+                high_price=10.2,
+                low_price=9.9,
+                volume=100,
+                amount=1000,
+            )
+        ]
+
+        result = service.stock_kline("000001", "2026-05-22", period="five_day", limit=5)
+
+        self.assertEqual("five_day", result.period)
+        self.assertEqual(4, len(result.bars))
+        self.assertEqual("2026-05-19 09:30:00", result.bars[0].trade_date)
+
+    def test_intraday_kline_aggregates_120_minutes(self):
+        service = MarketReviewService()
+        service._fetch_stock_kline_intraday = lambda *args, **kwargs: build_intraday_bars()
+
+        result = service.stock_kline("000001", "2026-05-22", period="120", limit=64, refresh=True)
+
+        self.assertEqual("120", result.period)
+        self.assertTrue(result.bars)
+        self.assertLess(len(result.bars), len(build_intraday_bars()))
+
+    def test_year_kline_aggregates_daily_bars(self):
+        service = MarketReviewService()
+        service._fetch_stock_kline_daily = lambda *args, **kwargs: [
+            StockKlineBar(
+                trade_date="2025-12-31",
+                open_price=9.0,
+                close_price=10.0,
+                high_price=10.2,
+                low_price=8.8,
+                volume=100,
+                amount=900,
+            ),
+            StockKlineBar(
+                trade_date="2026-01-02",
+                open_price=10.0,
+                close_price=11.0,
+                high_price=11.2,
+                low_price=9.8,
+                volume=120,
+                amount=1200,
+            ),
+            StockKlineBar(
+                trade_date="2026-05-22",
+                open_price=11.0,
+                close_price=12.0,
+                high_price=12.5,
+                low_price=10.8,
+                volume=180,
+                amount=2100,
+            ),
+        ]
+
+        result = service.stock_kline("000001", "2026-05-22", period="year", limit=20, refresh=True)
+
+        self.assertEqual("year", result.period)
+        self.assertEqual(2, len(result.bars))
+        self.assertEqual("2026-12-31", result.bars[-1].trade_date)
+        self.assertEqual(10.0, result.bars[-1].open_price)
+        self.assertEqual(12.0, result.bars[-1].close_price)
+
     def test_daily_kline_skips_bad_rows(self):
         class FakeAkshare:
             @staticmethod

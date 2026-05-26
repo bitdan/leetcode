@@ -68,6 +68,13 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
   top-level product areas as route groups, then include that group in the navigation filter.
 - Prefer Vuetify components and Material Design Icons (`mdi-*`) for controls. Keep pages usable as the first screen;
   do not add marketing-style landing pages for internal tools or app features.
+- For complex frontend interactions or domain-heavy widgets, first evaluate mature, well-maintained components or
+  libraries instead of hand-rolling core behavior. Examples include financial charts, rich editors, graph/network
+  visualizations, calendars, maps, drag-and-drop builders, and virtualized data grids.
+- When implementing domain-specific UI, reference established industry conventions for that domain and match user
+  expectations unless the request explicitly calls for a different interaction model. For example, stock charting
+  should follow common brokerage/trading UI patterns such as separate time-line and candlestick views, crosshair
+  inspection, standard period controls, price/volume panes, and familiar red/green market coloring.
 - For frontend verification, run `npm run build` from `tool-hub/`.
 
 ## Python Backend Guidelines

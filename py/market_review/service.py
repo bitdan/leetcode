@@ -348,7 +348,9 @@ class MarketReviewService:
         normalized_limit = max(1, min(limit, 240))
         bars: List[StockKlineBar] = []
 
-        if normalized_period == "day":
+        if normalized_period == "five_day":
+            bars = self._fetch_stock_kline_five_day(normalized_code, normalized_date)
+        elif normalized_period == "day":
             if not refresh and self.store and self.store.is_available():
                 try:
                     bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
@@ -362,6 +364,15 @@ class MarketReviewService:
                         self.store.save_stock_kline_daily(normalized_code, name, bars)
                     except MarketReviewStoreUnavailable as exc:
                         logger.warning("Market review daily kline save skipped for %s: %s", normalized_code, exc)
+        elif normalized_period == "week":
+            bars = self._fetch_stock_kline_daily(normalized_code, normalized_date, normalized_limit, period="weekly")
+        elif normalized_period == "year":
+            daily_bars = self._fetch_stock_kline_daily(
+                normalized_code,
+                normalized_date,
+                max(normalized_limit * 260, 260),
+            )
+            bars = self._aggregate_kline_bars(daily_bars, "year")[-normalized_limit:]
         else:
             if not refresh and self.store and self.store.is_available():
                 try:
@@ -371,7 +382,10 @@ class MarketReviewService:
                                    normalized_code, normalized_period, exc)
 
             if not bars:
-                bars = self._fetch_stock_kline_intraday(normalized_code, normalized_date, normalized_period)
+                fetch_period = "60" if normalized_period == "120" else normalized_period
+                bars = self._fetch_stock_kline_intraday(normalized_code, normalized_date, fetch_period)
+                if normalized_period == "120":
+                    bars = self._aggregate_intraday_bars(bars, 120)
                 if self.store and self.store.is_available():
                     try:
                         self.store.save_stock_kline_intraday(
@@ -518,8 +532,29 @@ class MarketReviewService:
     def _normalize_kline_period(value: str) -> str:
         text = (value or "day").strip().lower()
         mapping = {
+            "minute": "1",
+            "time": "1",
+            "fs": "1",
+            "分时": "1",
+            "1": "1",
+            "1m": "1",
+            "five_day": "five_day",
+            "5d": "five_day",
+            "五日k": "five_day",
+            "五日K": "five_day",
             "d": "day",
             "day": "day",
+            "daily": "day",
+            "week": "week",
+            "weekly": "week",
+            "w": "week",
+            "周k": "week",
+            "周K": "week",
+            "year": "year",
+            "yearly": "year",
+            "y": "year",
+            "年k": "year",
+            "年K": "year",
             "5": "5",
             "5m": "5",
             "15": "15",
@@ -528,9 +563,11 @@ class MarketReviewService:
             "30m": "30",
             "60": "60",
             "60m": "60",
+            "120": "120",
+            "120m": "120",
         }
         if text not in mapping:
-            raise ValueError("K线周期仅支持 day、5、15、30、60")
+            raise ValueError("K线周期仅支持 分时、五日K、day、week、year、120、60、30、15、5")
         return mapping[text]
 
     @staticmethod
@@ -687,15 +724,23 @@ class MarketReviewService:
             return 0
         return min(math.log10(value + 1) * 1.8, cap)
 
-    def _fetch_stock_kline_daily(self, code: str, normalized_date: str, limit: int) -> List[StockKlineBar]:
+    def _fetch_stock_kline_daily(
+            self,
+            code: str,
+            normalized_date: str,
+            limit: int,
+            period: str = "daily",
+    ) -> List[StockKlineBar]:
         ak = self._load_akshare()
         lookback_days = max(limit * 3, 90)
+        if period == "weekly":
+            lookback_days = max(limit * 10, 365)
         start_date = (datetime.strptime(normalized_date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y%m%d")
         end_date = normalized_date.replace("-", "")
         attempts = [
             ("eastmoney-qfq", lambda: ak.stock_zh_a_hist(
                 symbol=code,
-                period="daily",
+                period=period,
                 start_date=start_date,
                 end_date=end_date,
                 adjust="qfq",
@@ -703,14 +748,14 @@ class MarketReviewService:
             )),
             ("eastmoney-raw", lambda: ak.stock_zh_a_hist(
                 symbol=code,
-                period="daily",
+                period=period,
                 start_date=start_date,
                 end_date=end_date,
                 adjust="",
                 timeout=15,
             )),
         ]
-        if hasattr(ak, "stock_zh_a_daily"):
+        if period == "daily" and hasattr(ak, "stock_zh_a_daily"):
             attempts.extend([
                 ("sina-qfq", lambda: ak.stock_zh_a_daily(
                     symbol=self._market_symbol(code),
@@ -787,6 +832,67 @@ class MarketReviewService:
                 errors.append(f"{source}: {exc}")
         logger.warning("AKShare intraday kline unavailable for %s/%s, attempts=%s", code, period, errors)
         raise MarketReviewUnavailable("AKShare 分钟K线数据暂不可用")
+
+    def _fetch_stock_kline_five_day(self, code: str, normalized_date: str) -> List[StockKlineBar]:
+        daily_bars = self._fetch_stock_kline_daily(code, normalized_date, 10)
+        trade_dates = [item.trade_date for item in daily_bars if item.trade_date <= normalized_date][-5:]
+        if not trade_dates:
+            trade_dates = [normalized_date]
+        result: List[StockKlineBar] = []
+        errors: List[str] = []
+        for trade_date in trade_dates:
+            try:
+                result.extend(self._fetch_stock_kline_intraday(code, trade_date, "1"))
+            except MarketReviewUnavailable as exc:
+                errors.append(f"{trade_date}: {exc}")
+        if result:
+            return result
+        logger.warning("AKShare five-day timeline unavailable for %s, attempts=%s", code, errors)
+        raise MarketReviewUnavailable("AKShare 五日分时数据暂不可用")
+
+    def _aggregate_intraday_bars(self, bars: List[StockKlineBar], minutes: int) -> List[StockKlineBar]:
+        groups: Dict[str, List[StockKlineBar]] = defaultdict(list)
+        for item in bars:
+            bar_time = datetime.strptime(item.trade_date, "%Y-%m-%d %H:%M:%S")
+            minute_of_day = bar_time.hour * 60 + bar_time.minute
+            bucket_minute = (minute_of_day // minutes) * minutes
+            bucket_time = bar_time.replace(hour=bucket_minute // 60, minute=bucket_minute % 60, second=0)
+            groups[bucket_time.strftime("%Y-%m-%d %H:%M:%S")].append(item)
+        return [self._merge_kline_group(key, items) for key, items in sorted(groups.items()) if items]
+
+    def _aggregate_kline_bars(self, bars: List[StockKlineBar], period: str) -> List[StockKlineBar]:
+        groups: Dict[str, List[StockKlineBar]] = defaultdict(list)
+        for item in bars:
+            trade_date = datetime.strptime(item.trade_date, "%Y-%m-%d")
+            if period == "year":
+                key = f"{trade_date.year}-12-31"
+            else:
+                key = item.trade_date
+            groups[key].append(item)
+        return [self._merge_kline_group(key, items) for key, items in sorted(groups.items()) if items]
+
+    @staticmethod
+    def _merge_kline_group(key: str, items: List[StockKlineBar]) -> StockKlineBar:
+        ordered = sorted(items, key=lambda item: item.trade_date)
+        first = ordered[0]
+        last = ordered[-1]
+        high = max(item.high_price for item in ordered)
+        low = min(item.low_price for item in ordered)
+        amount = sum(item.amount or 0 for item in ordered)
+        volume = sum(item.volume or 0 for item in ordered)
+        change_amount = round(last.close_price - first.open_price, 4)
+        change_percent = round((change_amount / first.open_price) * 100, 4) if first.open_price else None
+        return StockKlineBar(
+            trade_date=key,
+            open_price=first.open_price,
+            close_price=last.close_price,
+            high_price=high,
+            low_price=low,
+            volume=volume,
+            amount=amount,
+            change_amount=change_amount,
+            change_percent=change_percent,
+        )
 
     @staticmethod
     def _tx_symbol(code: str) -> str:

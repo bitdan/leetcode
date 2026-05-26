@@ -87,7 +87,7 @@ class MarketReviewService:
         try:
             frame = ak.stock_zt_pool_em(date=normalized_date.replace("-", ""))
         except Exception as exc:
-            raise MarketReviewUnavailable("AKShare 涨停池数据暂不可用") from exc
+            raise MarketReviewUnavailable("涨停池数据暂不可用，请稍后重试") from exc
 
         rows = frame.to_dict(orient="records")
         stocks = [self._row_to_limit_up_stock(row) for row in rows]
@@ -265,7 +265,7 @@ class MarketReviewService:
         try:
             import akshare as ak
         except ImportError as exc:
-            raise MarketReviewUnavailable("未安装 akshare，请先在 py/requirements.txt 安装依赖") from exc
+            raise MarketReviewUnavailable("行情服务依赖未就绪，请检查后端运行环境") from exc
         return ak
 
     def _get_stored_review(self, normalized_date: str) -> Optional[MarketReviewData]:
@@ -320,6 +320,8 @@ class MarketReviewService:
         try:
             stored = self._get_stored_status(normalized_date)
             if stored:
+                if stored.get("source"):
+                    stored["source"] = "行情服务"
                 stored["expected_status"] = expected_status
                 stored["is_final"] = self._stored_snapshot_can_be_used(normalized_date, stored)
                 return stored
@@ -801,7 +803,7 @@ class MarketReviewService:
                 logger.warning("AKShare daily kline fetch failed for %s via %s: %s", code, source, exc)
                 errors.append(f"{source}: {exc}")
         logger.warning("AKShare daily kline unavailable for %s, attempts=%s", code, errors)
-        raise MarketReviewUnavailable("AKShare 个股 K 线数据暂不可用")
+        raise MarketReviewUnavailable("个股 K 线数据暂不可用，请稍后重试")
 
     def _fetch_stock_kline_intraday(self, code: str, normalized_date: str, period: str) -> List[StockKlineBar]:
         ak = self._load_akshare()
@@ -831,7 +833,7 @@ class MarketReviewService:
                                code, period, source, exc)
                 errors.append(f"{source}: {exc}")
         logger.warning("AKShare intraday kline unavailable for %s/%s, attempts=%s", code, period, errors)
-        raise MarketReviewUnavailable("AKShare 分钟K线数据暂不可用")
+        raise MarketReviewUnavailable("分钟K线数据暂不可用，请稍后重试")
 
     def _fetch_stock_kline_five_day(self, code: str, normalized_date: str) -> List[StockKlineBar]:
         daily_bars = self._fetch_stock_kline_daily(code, normalized_date, 10)
@@ -848,7 +850,7 @@ class MarketReviewService:
         if result:
             return result
         logger.warning("AKShare five-day timeline unavailable for %s, attempts=%s", code, errors)
-        raise MarketReviewUnavailable("AKShare 五日分时数据暂不可用")
+        raise MarketReviewUnavailable("五日分时数据暂不可用，请稍后重试")
 
     def _aggregate_intraday_bars(self, bars: List[StockKlineBar], minutes: int) -> List[StockKlineBar]:
         groups: Dict[str, List[StockKlineBar]] = defaultdict(list)

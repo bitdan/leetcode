@@ -10,6 +10,9 @@ def create_router(container) -> APIRouter:
     def dump_model(model) -> dict:
         return model.model_dump(mode="json") if hasattr(model, "model_dump") else model.dict()
 
+    def public_error(exc: Exception) -> str:
+        return str(exc).replace("AKShare", "行情服务").replace("akshare", "行情服务")
+
     def dump_review(data) -> dict:
         payload = dump_model(data)
         snapshot_status = service._snapshot_status(data.date)
@@ -25,7 +28,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.post("/warmup", response_model=ApiResponse)
     async def warmup(
@@ -45,7 +48,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/status", response_model=ApiResponse)
     async def status_view(date: str = Query(default="")):
@@ -64,7 +67,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/sector-strength", response_model=ApiResponse)
     async def sector_strength(date: str = Query(default="")):
@@ -74,7 +77,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/2-to-3", response_model=ApiResponse)
     async def candidates_2_to_3(date: str = Query(default="")):
@@ -84,7 +87,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/advancement", response_model=ApiResponse)
     async def advancement_candidates(date: str = Query(default="")):
@@ -94,7 +97,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/{pool_type}", response_model=ApiResponse)
     async def candidates_by_pool_type(pool_type: str, date: str = Query(default="")):
@@ -108,7 +111,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/divergence-consensus", response_model=ApiResponse)
     async def divergence_consensus(date: str = Query(default="")):
@@ -118,7 +121,7 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/kline/{code}", response_model=ApiResponse)
     async def stock_kline(
@@ -135,6 +138,6 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
         except MarketReviewUnavailable as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     return router

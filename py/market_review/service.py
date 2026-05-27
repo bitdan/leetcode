@@ -2,8 +2,8 @@ import asyncio
 import logging
 import math
 import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import date, datetime, time, timedelta
 from time import monotonic
 from typing import Any, Dict, List, Optional, Tuple
@@ -46,6 +46,7 @@ class MarketReviewService:
         self._review_cache: Dict[str, Tuple[float, MarketReviewData, str]] = {}
         self._environment_cache: Dict[str, Tuple[float, MarketEnvironment]] = {}
         self._final_snapshot_task: Optional[asyncio.Task] = None
+        self._kline_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="market-review-kline")
 
     def review(self, trading_date: Optional[str] = None, refresh: bool = False) -> MarketReviewData:
         normalized_date = self._normalize_date(trading_date)
@@ -123,8 +124,8 @@ class MarketReviewService:
             total_amount = sum(item.amount or 0 for item in items)
             max_boards = max((item.consecutive_boards for item in items), default=1)
             core = sorted(items, key=lambda item: (-item.consecutive_boards, -item.board_quality_score))[:3]
-            score = self._sector_strength_score(items, env)
             breakdown = self._sector_strength_breakdown(items, env)
+            score = breakdown["score"]
             risks = []
             if open_count >= max(2, len(items)):
                 risks.append("炸板偏多")
@@ -190,8 +191,8 @@ class MarketReviewService:
             target_boards = stock.consecutive_boards + 1
             pool_type = f"{stock.consecutive_boards}_to_{target_boards}"
             sector = sector_map.get(stock.industry or "未分类")
-            score = self._candidate_score(stock, sector, stocks, env)
             breakdown = self._candidate_score_breakdown(stock, sector, stocks, env)
+            score = breakdown["score"]
             reasons = []
             risks = list(stock.tags)
             if sector and sector.limit_up_count >= 3:
@@ -254,8 +255,8 @@ class MarketReviewService:
                 reasons.append("同板块涨停家数形成回流")
             if sector and sector.advanced_count >= 2:
                 reasons.append("板块连板梯队仍在")
-            score = self._divergence_signal_score(stock, sector, stocks, env)
             breakdown = self._divergence_signal_score_breakdown(stock, sector, stocks, env)
+            score = breakdown["score"]
             if open_count >= 4:
                 risks.append("分歧过大")
             if stock.first_limit_time and stock.first_limit_time >= "143000":
@@ -524,6 +525,9 @@ class MarketReviewService:
             pass
         self._final_snapshot_task = None
 
+    def close(self) -> None:
+        self._kline_executor.shutdown(wait=False, cancel_futures=True)
+
     async def _run_final_snapshot_scheduler(self) -> None:
         while True:
             await asyncio.sleep(self._seconds_until_next_final_snapshot())
@@ -638,8 +642,9 @@ class MarketReviewService:
             limit_up_stat=str(self._pick(row, "涨停统计", default="")),
             raw_payload=self._json_safe(row),
         )
-        stock.board_quality_score = self._quality_score(stock)
-        stock.score_breakdown = self._quality_score_breakdown(stock)
+        breakdown = self._quality_score_breakdown(stock)
+        stock.board_quality_score = breakdown["score"]
+        stock.score_breakdown = breakdown
         stock.tags = self._risk_tags(stock)
         return stock
 
@@ -680,39 +685,7 @@ class MarketReviewService:
             items: List[LimitUpStock],
             environment: Optional[MarketEnvironment] = None,
     ) -> float:
-        if not items:
-            return 0.0
-        limit_up_count = len(items)
-        open_count = sum(item.open_count or 0 for item in items)
-        top_quality = sorted((item.board_quality_score for item in items), reverse=True)[:3]
-        leader_quality = sum(top_quality) / len(top_quality) if top_quality else 0.0
-        total_seal = sum(item.seal_amount or 0 for item in items)
-        total_amount = sum(item.amount or 0 for item in items)
-        seal_amount_ratio = total_seal / total_amount if total_amount > 0 else 0.0
-        open_rate = open_count / max(limit_up_count, 1)
-
-        diffusion_score = self._limit_up_diffusion_score(limit_up_count)
-        ladder_score = self._sector_ladder_completeness_score(items)
-        capital_score = (
-                self._ratio_score(seal_amount_ratio, [(0.10, 100), (0.06, 85), (0.03, 65), (0.015, 45), (0.0, 20)])
-                * 0.65
-                + (self._money_score(total_seal, 10) / 10) * 100 * 0.35
-        )
-        persistence_score = min(max((max(item.consecutive_boards for item in items) - 1) * 22, 25), 100)
-        risk_penalty = min(open_rate * 22, 28)
-        if limit_up_count == 1:
-            risk_penalty += 12
-
-        score = (
-                diffusion_score * 0.25
-                + ladder_score * 0.25
-                + leader_quality * 0.20
-                + capital_score * 0.15
-                + persistence_score * 0.10
-                + self._market_environment_score(items, environment) * 0.05
-                - risk_penalty
-        )
-        return self._clamp_score(score)
+        return self._sector_strength_breakdown(items, environment)["score"]
 
     def _sector_strength_breakdown(
             self,
@@ -768,26 +741,7 @@ class MarketReviewService:
             pool: List[LimitUpStock],
             environment: Optional[MarketEnvironment] = None,
     ) -> float:
-        sector_score = sector.strength_score if sector else 35.0
-        risk_penalty = 0.0
-        if stock.first_limit_time and stock.first_limit_time >= "143000":
-            risk_penalty += 8
-        if stock.seal_amount and stock.amount and stock.seal_amount / max(stock.amount, 1) < 0.03:
-            risk_penalty += 8
-        if (stock.open_count or 0) >= 3:
-            risk_penalty += 12
-        if sector and sector.limit_up_count <= 1 and self._market_environment_score(pool, environment) < 55:
-            risk_penalty += 8
-
-        score = (
-                stock.board_quality_score * 0.42
-                + sector_score * 0.28
-                + self._ladder_position_score(stock, pool) * 0.15
-                + self._next_day_expectation_score(stock, sector, pool) * 0.10
-                + self._market_environment_score(pool, environment) * 0.05
-                - risk_penalty
-        )
-        return self._clamp_score(score)
+        return self._candidate_score_breakdown(stock, sector, pool, environment)["score"]
 
     def _candidate_score_breakdown(
             self,
@@ -834,35 +788,7 @@ class MarketReviewService:
             pool: List[LimitUpStock],
             environment: Optional[MarketEnvironment] = None,
     ) -> float:
-        open_count = stock.open_count or 0
-        divergence_quality = 0.0
-        if open_count == 1:
-            divergence_quality = 92.0
-        elif open_count == 2:
-            divergence_quality = 72.0
-        elif open_count == 3:
-            divergence_quality = 48.0
-        elif open_count >= 4:
-            divergence_quality = 22.0
-        elif stock.last_limit_time and stock.first_limit_time and stock.last_limit_time > stock.first_limit_time:
-            divergence_quality = 56.0
-
-        sector_return = sector.strength_score if sector else 30.0
-        risk_penalty = 0.0
-        if open_count >= 4:
-            risk_penalty += 18
-        if stock.first_limit_time and stock.first_limit_time >= "143000":
-            risk_penalty += 10
-
-        score = (
-                divergence_quality * 0.30
-                + self._seal_strength_score(stock) * 0.25
-                + sector_return * 0.25
-                + self._ladder_position_score(stock, pool) * 0.10
-                + self._market_environment_score(pool, environment) * 0.10
-                - risk_penalty
-        )
-        return self._clamp_score(score)
+        return self._divergence_signal_score_breakdown(stock, sector, pool, environment)["score"]
 
     def _divergence_signal_score_breakdown(
             self,
@@ -1447,17 +1373,13 @@ class MarketReviewService:
         logger.warning("AKShare daily kline unavailable for %s, attempts=%s", code, errors)
         raise MarketReviewUnavailable("个股 K 线数据暂不可用，请稍后重试")
 
-    @staticmethod
-    def _call_with_timeout(fetcher, timeout_seconds: float):
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(fetcher)
+    def _call_with_timeout(self, fetcher, timeout_seconds: float):
+        future = self._kline_executor.submit(fetcher)
         try:
             return future.result(timeout=timeout_seconds)
         except FutureTimeoutError as exc:
             future.cancel()
             raise TimeoutError(f"timeout after {timeout_seconds:.1f}s") from exc
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
 
     def _fetch_stock_kline_intraday(self, code: str, normalized_date: str, period: str) -> List[StockKlineBar]:
         ak = self._load_akshare()

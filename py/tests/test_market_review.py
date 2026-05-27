@@ -17,6 +17,7 @@ from market_review.schemas import (
     StockKlineBar,
 )
 from market_review.service import MarketReviewService
+from market_review.store import MarketReviewStore
 
 
 def build_review_data(trade_date: str = "2026-05-22") -> MarketReviewData:
@@ -734,8 +735,8 @@ class MarketReviewServiceTest(unittest.TestCase):
             ),
         ]
         for item in pool:
-            item.board_quality_score = service._quality_score(item)
             item.score_breakdown = service._quality_score_breakdown(item)
+            item.board_quality_score = item.score_breakdown["score"]
 
         sectors = service.sector_strength("2026-05-22", pool)
         candidates = service.advancement_candidates("2026-05-22", pool, sectors)
@@ -745,6 +746,71 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertIn("ladder_completeness", sectors[0].score_breakdown)
         self.assertIn("next_day_expectation", candidates[0].score_breakdown)
         self.assertIn("divergence_quality", signals[0].score_breakdown)
+
+    def test_row_to_limit_up_stock_computes_quality_breakdown_once(self):
+        service = MarketReviewService()
+        call_count = 0
+        original = service._seal_timing_score
+
+        def counted(stock):
+            nonlocal call_count
+            call_count += 1
+            return original(stock)
+
+        with patch.object(service, "_seal_timing_score", side_effect=counted):
+            stock = service._row_to_limit_up_stock({
+                "代码": "000001",
+                "名称": "强势股",
+                "所属行业": "算力",
+                "成交额": 100_000_000,
+                "流通市值": 4_000_000_000,
+                "封板资金": 8_000_000,
+                "首次封板时间": "09:40:00",
+                "炸板次数": 0,
+                "涨停统计": "2/2",
+            })
+
+        self.assertEqual(1, call_count)
+        self.assertEqual(stock.board_quality_score, stock.score_breakdown["score"])
+
+    def test_store_row_conversion_preserves_score_breakdown(self):
+        sector = SectorStrength(
+            industry="算力",
+            limit_up_count=2,
+            advanced_count=1,
+            max_consecutive_boards=2,
+            strength_score=76.5,
+            score_breakdown={"score": 76.5, "ladder_completeness": 80.0},
+        )
+        candidate = CandidateStock(
+            stock=LimitUpStock(code="000001", name="强势股", industry="算力"),
+            pool_type="2_to_3",
+            target_boards=3,
+            candidate_score=82.0,
+            score_breakdown={"score": 82.0, "next_day_expectation": 75.0},
+        )
+        signal = DivergenceConsensusSignal(
+            code="000001",
+            name="强势股",
+            industry="算力",
+            phase="分歧转一致",
+            signal_score=68.0,
+            score_breakdown={"score": 68.0, "divergence_quality": 92.0},
+        )
+        trade_date = MarketReviewStore._parse_date("2026-05-22")
+
+        sector_row = MarketReviewStore._sector_to_row(trade_date, sector)
+        candidate_row = MarketReviewStore._candidate_to_row(trade_date, candidate)
+        signal_row = MarketReviewStore._signal_to_row(trade_date, signal)
+
+        store = object.__new__(MarketReviewStore)
+        self.assertEqual(80.0, store._sector_from_row(sector_row).score_breakdown["ladder_completeness"])
+        self.assertEqual(75.0, store._candidate_from_row(
+            candidate_row,
+            {"000001": candidate.stock},
+            {"算力": sector},
+        ).score_breakdown["next_day_expectation"])
+        self.assertEqual(92.0, store._signal_from_row(signal_row).score_breakdown["divergence_quality"])
 
     def test_market_environment_fetches_realtime_snapshot_for_today(self):
         class FakeAkshare:

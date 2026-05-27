@@ -548,6 +548,7 @@ class MarketReviewStore:
             open_count=row.open_count,
             core_stocks=list(row.core_stocks or []),
             strength_score=float(row.strength_score or 0),
+            score_breakdown=dict(row.score_breakdown or {}),
             risk_tags=list(row.risk_tags or []),
         )
 
@@ -564,6 +565,7 @@ class MarketReviewStore:
             pool_type=row.pool_type,
             target_boards=row.target_boards,
             candidate_score=float(row.candidate_score or 0),
+            score_breakdown=dict(row.score_breakdown or {}),
             level=row.level,
             reasons=list(row.reasons or []),
             risks=list(row.risks or []),
@@ -576,6 +578,7 @@ class MarketReviewStore:
             industry=row.industry,
             phase=row.phase,
             signal_score=float(row.signal_score or 0),
+            score_breakdown=dict(row.score_breakdown or {}),
             reasons=list(row.reasons or []),
             risks=list(row.risks or []),
         )
@@ -619,6 +622,7 @@ class MarketReviewStore:
             open_count=item.open_count,
             core_stocks=list(item.core_stocks),
             strength_score=item.strength_score,
+            score_breakdown=dict(item.score_breakdown),
             risk_tags=list(item.risk_tags),
         )
 
@@ -631,6 +635,7 @@ class MarketReviewStore:
             industry=item.stock.industry,
             target_boards=item.target_boards,
             candidate_score=item.candidate_score,
+            score_breakdown=dict(item.score_breakdown),
             level=item.level,
             reasons=list(item.reasons),
             risks=list(item.risks),
@@ -647,6 +652,7 @@ class MarketReviewStore:
             industry=item.industry,
             phase=item.phase,
             signal_score=item.signal_score,
+            score_breakdown=dict(item.score_breakdown),
             reasons=list(item.reasons),
             risks=list(item.risks),
             rule_version="v1",

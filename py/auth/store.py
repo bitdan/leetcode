@@ -434,7 +434,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
     def get_by_username(self, username: str) -> Optional[UserRecord]:
         with session_scope(self.session_factory) as session:
-            user = session.scalar(select(SysUser).where(SysUser.username == username, SysUser.status == "active"))
+            user = session.scalar(select(SysUser).where(SysUser.username == username, SysUser.status != "deleted"))
             return self._deserialize(user) if user else None
 
     def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:

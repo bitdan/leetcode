@@ -80,6 +80,7 @@ class AuthAndGameApiTest(unittest.TestCase):
             item for item in users.json()["data"]["items"]
             if item["username"] == f"managed_{suffix}"
         )
+        self.assertIn("created_at", managed_user)
 
         reset = self.client.put(
             f"/api/v1/admin/users/{managed_user['user_id']}/password",
@@ -110,6 +111,14 @@ class AuthAndGameApiTest(unittest.TestCase):
         )
         self.assertEqual(200, update.status_code)
         self.assertEqual("disabled", update.json()["data"]["status"])
+
+        frozen = self.client.put(
+            f"/api/v1/admin/users/{managed_user['user_id']}",
+            headers=admin_headers,
+            json={"status": "frozen", "roles": ["user"], "permissions": []},
+        )
+        self.assertEqual(200, frozen.status_code)
+        self.assertEqual("frozen", frozen.json()["data"]["status"])
 
         disabled_login = self.client.post(
             "/api/v1/login",

@@ -73,6 +73,8 @@ class UserService:
         if not record or not self.jwt_handler.verify_password(login_data.password, record.password_hash):
             raise ValueError("用户名或密码错误")
         if record.status != "active":
+            if record.status == "frozen":
+                raise ValueError("账号已被冻结")
             raise ValueError("账号已被禁用")
         logger.info("User authenticated: %s", login_data.username)
         return build_user(record)
@@ -132,8 +134,8 @@ class UserService:
         if not record:
             raise ValueError("用户不存在")
         if payload.status is not None:
-            if payload.status not in {"active", "disabled"}:
-                raise ValueError("用户状态只能是 active 或 disabled")
+            if payload.status not in {"active", "disabled", "frozen"}:
+                raise ValueError("用户状态只能是 active、disabled 或 frozen")
             record.status = payload.status
         if payload.roles is not None:
             record.roles = self._normalize_string_list(payload.roles, "角色")

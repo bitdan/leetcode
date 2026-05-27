@@ -1,4 +1,5 @@
 import logging
+from time import monotonic
 from datetime import datetime
 from typing import Dict, Optional, Sequence
 
@@ -21,7 +22,7 @@ from market_review.schemas import (
     SectorStrength,
     StockKlineBar,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -33,16 +34,14 @@ class MarketReviewStoreUnavailable(RuntimeError):
 
 
 class MarketReviewStore:
+    RECOVERY_RETRY_SECONDS = 300
+
     def __init__(self, postgres_dsn: str):
+        self.postgres_dsn = postgres_dsn
         self.unavailable_reason = ""
+        self.unavailable_since: Optional[float] = None
         self.session_factory = None
-        try:
-            self.session_factory = create_session_factory(postgres_dsn)
-        except ModuleNotFoundError:
-            self.unavailable_reason = "缺少 PostgreSQL 驱动，请先安装 py/requirements.txt 中的依赖"
-        except Exception:
-            logger.exception("PostgreSQL market review store initialization failed")
-            self.unavailable_reason = "PostgreSQL 连接初始化失败，请检查 POSTGRES_DSN 和数据库状态"
+        self._initialize_session_factory()
 
     def close(self) -> None:
         if not self.session_factory:
@@ -50,6 +49,8 @@ class MarketReviewStore:
         self.session_factory.kw["bind"].dispose()
 
     def is_available(self) -> bool:
+        if not self.session_factory:
+            self._try_recover()
         return bool(self.session_factory)
 
     def get_review(self, trade_date: str, statuses: Optional[Sequence[str]] = None) -> Optional[MarketReviewData]:
@@ -112,20 +113,49 @@ class MarketReviewStore:
         try:
             with session_scope(self.session_factory) as session:
                 parsed_date = self._parse_date(data.date)
-                for model in (
-                        MarketReviewSignal,
-                        MarketCandidatePool,
-                        MarketSectorStrength,
-                        MarketLimitUpPool,
-                        MarketReviewRun,
-                ):
-                    session.execute(delete(model).where(model.trade_date == parsed_date))
-
-                session.add(MarketReviewRun(trade_date=parsed_date, source="akshare", status=status))
-                session.add_all([self._stock_to_row(parsed_date, item) for item in data.limit_up_pool])
-                session.add_all([self._sector_to_row(parsed_date, item) for item in data.sector_strength])
-                session.add_all([self._candidate_to_row(parsed_date, item) for item in data.advancement_candidates])
-                session.add_all([self._signal_to_row(parsed_date, item) for item in data.divergence_consensus])
+                self._upsert_rows(
+                    session,
+                    MarketReviewRun,
+                    [MarketReviewRun(trade_date=parsed_date, source="akshare", status=status)],
+                    "uq_market_review_runs_date_source",
+                    ("trade_date", "source"),
+                )
+                self._replace_by_upsert(
+                    session,
+                    MarketLimitUpPool,
+                    [self._stock_to_row(parsed_date, item) for item in data.limit_up_pool],
+                    parsed_date,
+                    "uq_market_limit_up_pool_date_code",
+                    ("trade_date", "code"),
+                    ("code",),
+                )
+                self._replace_by_upsert(
+                    session,
+                    MarketSectorStrength,
+                    [self._sector_to_row(parsed_date, item) for item in data.sector_strength],
+                    parsed_date,
+                    "uq_market_sector_strength_date_industry",
+                    ("trade_date", "industry"),
+                    ("industry",),
+                )
+                self._replace_by_upsert(
+                    session,
+                    MarketCandidatePool,
+                    [self._candidate_to_row(parsed_date, item) for item in data.advancement_candidates],
+                    parsed_date,
+                    "uq_market_candidate_pool_date_type_code",
+                    ("trade_date", "pool_type", "code"),
+                    ("pool_type", "code"),
+                )
+                self._replace_by_upsert(
+                    session,
+                    MarketReviewSignal,
+                    [self._signal_to_row(parsed_date, item) for item in data.divergence_consensus],
+                    parsed_date,
+                    "uq_market_review_signal_date_type_code",
+                    ("trade_date", "signal_type", "code"),
+                    ("signal_type", "code"),
+                )
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 
@@ -374,13 +404,97 @@ class MarketReviewStore:
 
     def _ensure_available(self) -> None:
         if not self.session_factory:
+            self._try_recover()
+        if not self.session_factory:
             raise MarketReviewStoreUnavailable(self.unavailable_reason or "POSTGRES_DSN 未配置，市场复盘快照不可用")
 
     def _mark_unavailable(self, exc: SQLAlchemyError):
         logger.warning("Market review store unavailable after database error: %s", exc.__class__.__name__)
         self.unavailable_reason = "市场复盘表不可用，请先运行 Alembic 迁移"
+        self.unavailable_since = monotonic()
+        if self.session_factory:
+            try:
+                self.session_factory.kw["bind"].dispose()
+            except Exception:
+                logger.debug("Unable to dispose market review store engine", exc_info=True)
         self.session_factory = None
         raise MarketReviewStoreUnavailable(self.unavailable_reason) from exc
+
+    def _initialize_session_factory(self) -> None:
+        try:
+            self.session_factory = create_session_factory(self.postgres_dsn)
+            self.unavailable_reason = ""
+            self.unavailable_since = None
+        except ModuleNotFoundError:
+            self.unavailable_reason = "缺少 PostgreSQL 驱动，请先安装 py/requirements.txt 中的依赖"
+            self.unavailable_since = monotonic()
+        except Exception:
+            logger.exception("PostgreSQL market review store initialization failed")
+            self.unavailable_reason = "PostgreSQL 连接初始化失败，请检查 POSTGRES_DSN 和数据库状态"
+            self.unavailable_since = monotonic()
+
+    def _try_recover(self) -> None:
+        if self.session_factory:
+            return
+        if self.unavailable_since and monotonic() - self.unavailable_since < self.RECOVERY_RETRY_SECONDS:
+            return
+        logger.info("Retrying PostgreSQL market review store initialization")
+        self._initialize_session_factory()
+
+    def _replace_by_upsert(
+            self,
+            session,
+            model,
+            model_rows: list,
+            trade_date,
+            constraint: str,
+            conflict_columns: tuple[str, ...],
+            stale_key_columns: tuple[str, ...],
+    ) -> None:
+        if model_rows:
+            self._upsert_rows(session, model, model_rows, constraint, conflict_columns)
+            current_keys = [
+                tuple(getattr(row, column) for column in stale_key_columns)
+                for row in model_rows
+            ]
+            if len(stale_key_columns) == 1:
+                column = getattr(model, stale_key_columns[0])
+                session.execute(
+                    delete(model).where(model.trade_date == trade_date, column.not_in([key[0] for key in current_keys]))
+                )
+            else:
+                columns = tuple_(*(getattr(model, column) for column in stale_key_columns))
+                session.execute(
+                    delete(model).where(model.trade_date == trade_date, columns.not_in(current_keys))
+                )
+            return
+        session.execute(delete(model).where(model.trade_date == trade_date))
+
+    @staticmethod
+    def _upsert_rows(session, model, model_rows: list, constraint: str, conflict_columns: tuple[str, ...]) -> None:
+        if not model_rows:
+            return
+        rows = [MarketReviewStore._model_to_insert_dict(row) for row in model_rows]
+        stmt = pg_insert(model).values(rows)
+        update_columns = {
+            column.name: getattr(stmt.excluded, column.name)
+            for column in model.__table__.columns
+            if column.name not in {"id", "created_at"} and column.name not in conflict_columns
+        }
+        if "updated_at" in model.__table__.columns:
+            update_columns["updated_at"] = datetime.now()
+        if "generated_at" in model.__table__.columns:
+            update_columns["generated_at"] = datetime.now()
+        session.execute(stmt.on_conflict_do_update(constraint=constraint, set_=update_columns))
+
+    @staticmethod
+    def _model_to_insert_dict(row) -> dict:
+        result = {}
+        for column in row.__table__.columns:
+            if column.name in {"id", "created_at", "updated_at", "generated_at"}:
+                continue
+            result[column.name] = getattr(row, column.name)
+        return result
 
     @staticmethod
     def _parse_date(value: str):
@@ -401,6 +515,7 @@ class MarketReviewStore:
         return ""
 
     def _stock_from_row(self, row: MarketLimitUpPool) -> LimitUpStock:
+        raw_payload = dict(row.raw_payload or {})
         return LimitUpStock(
             code=row.code,
             name=row.name,
@@ -417,8 +532,9 @@ class MarketReviewStore:
             consecutive_boards=row.consecutive_boards,
             limit_up_stat=row.limit_up_stat,
             board_quality_score=float(row.board_quality_score or 0),
+            score_breakdown=dict(raw_payload.get("score_breakdown") or {}),
             tags=list(row.tags or []),
-            raw_payload=dict(row.raw_payload or {}),
+            raw_payload=raw_payload,
         )
 
     def _sector_from_row(self, row: MarketSectorStrength) -> SectorStrength:
@@ -466,6 +582,9 @@ class MarketReviewStore:
 
     @staticmethod
     def _stock_to_row(trade_date, item: LimitUpStock) -> MarketLimitUpPool:
+        raw_payload = dict(item.raw_payload)
+        if item.score_breakdown:
+            raw_payload["score_breakdown"] = dict(item.score_breakdown)
         return MarketLimitUpPool(
             trade_date=trade_date,
             code=item.code,
@@ -484,7 +603,7 @@ class MarketReviewStore:
             limit_up_stat=item.limit_up_stat,
             board_quality_score=item.board_quality_score,
             tags=list(item.tags),
-            raw_payload=dict(item.raw_payload),
+            raw_payload=raw_payload,
         )
 
     @staticmethod

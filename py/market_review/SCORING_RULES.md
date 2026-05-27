@@ -1,6 +1,6 @@
 # Market Review Scoring Rules
 
-This document records the current scoring logic and the recommended next version for
+This document records the current V2 scoring logic and the recommended next steps for
 limit-up review, sector strength, advancement candidates, and divergence-to-consensus
 signals.
 
@@ -15,26 +15,24 @@ Field: `board_quality_score`
 Current formula:
 
 ```text
-score = 45
-      + min(consecutive_boards * 6, 24)
-      + first_limit_time_bonus
-      - min(open_count * 6, 24)
-      + seal_amount_bonus
-      + turnover_bonus
+board_quality_score =
+  seal_timing_score * 0.22
+  + seal_stability_score * 0.18
+  + seal_strength_score * 0.20
+  + turnover_structure_score * 0.15
+  + ladder_position_score * 0.15
+  + market_fit_score * 0.10
+  - risk_penalty
 ```
 
 Rules:
 
-- Consecutive boards: +6 per board, capped at +24.
-- First limit-up time:
-    - Before or at 10:00: +16.
-    - Before or at 11:30: +10.
-    - After or at 14:30: -10.
-- Open-board count: -6 per open, capped at -24.
-- Seal amount: logarithmic score, capped at +12.
-- Turnover:
-    - 3% to 18%: +8.
-    - Above 30%: -8.
+- Seal timing rewards early active boards and penalizes late boards.
+- Seal stability rewards no-open and one-open boards, and heavily penalizes repeated opens.
+- Seal strength uses `seal_amount / amount`, `seal_amount / circulating_market_value`, and absolute seal amount.
+- Turnover structure uses different preferred bands for small, mid, and large float market value.
+- Ladder position rewards market highest board, sector highest board, and sector leader status.
+- Risk penalty covers late boards, repeated opens, weak relative seal amount, extreme turnover, and unknown sector.
 - Final score is clamped to 0-100.
 
 Current risk tags:
@@ -43,6 +41,7 @@ Current risk tags:
 - `尾盘封板`: first limit-up time after or at 14:30.
 - `换手过高`: turnover above 30%.
 - `板块未知`: missing or unknown industry.
+- `封单偏弱`: `seal_amount / amount < 0.02`.
 
 ### Sector Strength Score
 
@@ -51,25 +50,31 @@ Field: `strength_score`
 Current formula:
 
 ```text
-score = limit_up_count * 16
-      + advanced_count * 12
-      + max_consecutive_boards * 8
-      + total_seal_amount_bonus
-      - min(open_count * 2.5, 18)
+strength_score =
+  limit_up_diffusion_score * 0.25
+  + ladder_completeness_score * 0.25
+  + leader_quality_score * 0.20
+  + capital_confirmation_score * 0.15
+  + persistence_score * 0.10
+  + market_environment_score * 0.05
+  - sector_risk_penalty
 ```
 
 Rules:
 
-- Limit-up count is the main driver.
-- Advanced count means stocks with at least 2 consecutive boards.
-- Highest board height contributes directly.
-- Total seal amount uses logarithmic scoring, capped at +8.
-- Open-board count weakens the sector score.
+- Diffusion scores sector limit-up count on a normalized 0-100 scale.
+- Ladder completeness checks whether the sector has first board, second board, and third-board-or-above stocks.
+- Leader quality averages the top 1-3 stocks' `board_quality_score`.
+- Capital confirmation combines relative seal strength and absolute total seal amount.
+- Persistence currently uses current ladder height as a proxy. Cross-day sector-rank persistence is still a planned
+  improvement.
+- Open-board rate and one-stock sectors are penalized.
 
 Current risk tags:
 
 - `炸板偏多`: total open count is greater than or equal to `max(2, limit_up_count)`.
 - `板块跟随不足`: only one stock in the sector.
+- `核心断层明显`: core stock quality distribution is too uneven.
 
 ### Advancement Candidate Score
 
@@ -78,15 +83,19 @@ Field: `candidate_score`
 Current formula:
 
 ```text
-score = board_quality_score
-      + strength_score * 0.35
-      + min(consecutive_boards * 4, 16)
+candidate_score =
+  board_quality_score * 0.42
+  + normalized_sector_strength * 0.28
+  + ladder_position_score * 0.15
+  + next_day_expectation_score * 0.10
+  + market_environment_score * 0.05
+  - risk_penalty
 ```
 
 Level rules:
 
-- `高关注`: score >= 82 and risk count <= 1.
-- `剔除`: score < 55 or risk count >= 3.
+- `高关注`: score >= 80, risk count <= 1, and not late weak board.
+- `剔除`: score < 60 or risk count >= 3.
 - `观察`: all other candidates.
 
 Current positive reasons:
@@ -101,23 +110,58 @@ Current extra risks:
 
 - Seal amount is less than 3% of traded amount.
 - First limit-up time is after or at 14:30.
+- Isolated sector in a weak market environment.
 
 ### Divergence-To-Consensus Signal Score
 
 Field: `signal_score`
 
-Current additions:
+Current formula:
 
-- Open-board and reseal: +8 per open, capped at +24.
-- Last limit-up time later than first limit-up time: +10.
-- Sector has at least 3 limit-up stocks: +24.
-- Sector has at least 2 advanced stocks: +16.
-- Seal amount logarithmic bonus, capped at +12.
+```text
+signal_score =
+  divergence_quality_score * 0.30
+  + reseal_strength_score * 0.25
+  + sector_return_score * 0.25
+  + leader_status_score * 0.10
+  + market_environment_score * 0.10
+  - risk_penalty
+```
+
+Current components:
+
+- Open-board and reseal quality is best at one controlled open, then degrades as open count rises.
+- Reseal strength reuses the normalized seal strength score.
+- Sector return uses the current sector strength score.
+- Leader status uses ladder position.
+- Market environment uses the broad-market score where available, otherwise a pool-derived fallback.
 
 Current risks:
 
 - `分歧过大`: open-board count >= 4.
 - `尾盘一致性待确认`: first limit-up time after or at 14:30.
+
+### Score Breakdown
+
+API responses now include optional `score_breakdown` objects for limit-up stocks, sector strength rows, advancement
+candidates, and divergence-to-consensus signals. The field exposes the normalized factor scores and final clamped score,
+for example:
+
+```json
+{
+  "board_quality_score": 82.3,
+  "score_breakdown": {
+    "score": 82.3,
+    "seal_timing": 88.0,
+    "seal_stability": 100.0,
+    "seal_strength": 65.3,
+    "turnover_structure": 80.0,
+    "ladder_position": 72.0,
+    "market_fit": 60.0,
+    "risk_penalty": 0.0
+  }
+}
+```
 
 ## Limitations
 
@@ -131,10 +175,10 @@ The current rules are usable as a first-pass heuristic, but they have several is
 - It does not account for intraday market risk appetite, such as total turnover, limit-up/down ratio, and broad-market
   breadth.
 
-## Recommended V2 Rules
+## V2 Rule Rationale
 
-Keep the output fields unchanged for frontend compatibility, but change the internal scoring to a normalized 0-100
-system.
+The current implementation keeps the original output fields for frontend compatibility, but the internal scoring has
+already moved to a normalized 0-100 system.
 
 ### Market Environment Score
 

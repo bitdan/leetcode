@@ -19,6 +19,7 @@ class LimitUpStock(BaseModel):
     consecutive_boards: int = 1
     limit_up_stat: str = ""
     board_quality_score: float = 0
+    score_breakdown: dict = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     raw_payload: dict = Field(default_factory=dict)
 
@@ -33,6 +34,7 @@ class SectorStrength(BaseModel):
     open_count: int = 0
     core_stocks: List[str] = Field(default_factory=list)
     strength_score: float = 0
+    score_breakdown: dict = Field(default_factory=dict)
     risk_tags: List[str] = Field(default_factory=list)
 
 
@@ -42,6 +44,7 @@ class CandidateStock(BaseModel):
     pool_type: str = "2_to_3"
     target_boards: int = 3
     candidate_score: float = 0
+    score_breakdown: dict = Field(default_factory=dict)
     level: str = "观察"
     reasons: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
@@ -53,6 +56,7 @@ class DivergenceConsensusSignal(BaseModel):
     industry: str
     phase: str
     signal_score: float
+    score_breakdown: dict = Field(default_factory=dict)
     reasons: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
 

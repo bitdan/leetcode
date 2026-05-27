@@ -706,6 +706,46 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertGreater(candidate_map["000001"].candidate_score, candidate_map["000003"].candidate_score + 20)
         self.assertNotEqual("高关注", candidate_map["000003"].level)
 
+    def test_v2_score_breakdown_is_returned(self):
+        service = MarketReviewService()
+        pool = [
+            LimitUpStock(
+                code="000001",
+                name="龙头",
+                industry="算力",
+                amount=100_000_000,
+                circulating_market_value=4_000_000_000,
+                seal_amount=9_000_000,
+                first_limit_time="094000",
+                open_count=1,
+                consecutive_boards=2,
+                last_limit_time="100000",
+            ),
+            LimitUpStock(
+                code="000002",
+                name="助攻",
+                industry="算力",
+                amount=90_000_000,
+                circulating_market_value=3_000_000_000,
+                seal_amount=5_000_000,
+                first_limit_time="101000",
+                open_count=0,
+                consecutive_boards=1,
+            ),
+        ]
+        for item in pool:
+            item.board_quality_score = service._quality_score(item)
+            item.score_breakdown = service._quality_score_breakdown(item)
+
+        sectors = service.sector_strength("2026-05-22", pool)
+        candidates = service.advancement_candidates("2026-05-22", pool, sectors)
+        signals = service.divergence_consensus("2026-05-22", pool, sectors)
+
+        self.assertIn("seal_timing", pool[0].score_breakdown)
+        self.assertIn("ladder_completeness", sectors[0].score_breakdown)
+        self.assertIn("next_day_expectation", candidates[0].score_breakdown)
+        self.assertIn("divergence_quality", signals[0].score_breakdown)
+
     def test_market_environment_fetches_realtime_snapshot_for_today(self):
         class FakeAkshare:
             @staticmethod

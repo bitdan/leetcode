@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from time import monotonic
@@ -35,6 +36,9 @@ FINAL_SNAPSHOT_TIME = time(15, 10)
 
 
 class MarketReviewService:
+    KLINE_SOURCE_TIMEOUT_SECONDS = 8
+    KLINE_TOTAL_TIMEOUT_SECONDS = 32
+
     def __init__(self, store: Optional[MarketReviewStore] = None, cache_ttl_seconds: int = 300):
         self.store = store
         self.cache_ttl_seconds = cache_ttl_seconds
@@ -120,6 +124,7 @@ class MarketReviewService:
             max_boards = max((item.consecutive_boards for item in items), default=1)
             core = sorted(items, key=lambda item: (-item.consecutive_boards, -item.board_quality_score))[:3]
             score = self._sector_strength_score(items, env)
+            breakdown = self._sector_strength_breakdown(items, env)
             risks = []
             if open_count >= max(2, len(items)):
                 risks.append("炸板偏多")
@@ -137,6 +142,7 @@ class MarketReviewService:
                 open_count=open_count,
                 core_stocks=[item.name for item in core],
                 strength_score=round(max(score, 0), 2),
+                score_breakdown=breakdown,
                 risk_tags=risks,
             ))
         return sorted(sectors, key=lambda item: item.strength_score, reverse=True)
@@ -185,6 +191,7 @@ class MarketReviewService:
             pool_type = f"{stock.consecutive_boards}_to_{target_boards}"
             sector = sector_map.get(stock.industry or "未分类")
             score = self._candidate_score(stock, sector, stocks, env)
+            breakdown = self._candidate_score_breakdown(stock, sector, stocks, env)
             reasons = []
             risks = list(stock.tags)
             if sector and sector.limit_up_count >= 3:
@@ -212,6 +219,7 @@ class MarketReviewService:
                 pool_type=pool_type,
                 target_boards=target_boards,
                 candidate_score=round(score, 2),
+                score_breakdown=breakdown,
                 level=level,
                 reasons=reasons or [f"{stock.consecutive_boards}连板入池"],
                 risks=risks,
@@ -247,6 +255,7 @@ class MarketReviewService:
             if sector and sector.advanced_count >= 2:
                 reasons.append("板块连板梯队仍在")
             score = self._divergence_signal_score(stock, sector, stocks, env)
+            breakdown = self._divergence_signal_score_breakdown(stock, sector, stocks, env)
             if open_count >= 4:
                 risks.append("分歧过大")
             if stock.first_limit_time and stock.first_limit_time >= "143000":
@@ -258,6 +267,7 @@ class MarketReviewService:
                     industry=stock.industry,
                     phase=phase,
                     signal_score=round(score, 2),
+                    score_breakdown=breakdown,
                     reasons=reasons or ["封板稳定"],
                     risks=risks,
                 ))
@@ -629,20 +639,41 @@ class MarketReviewService:
             raw_payload=self._json_safe(row),
         )
         stock.board_quality_score = self._quality_score(stock)
+        stock.score_breakdown = self._quality_score_breakdown(stock)
         stock.tags = self._risk_tags(stock)
         return stock
 
     def _quality_score(self, stock: LimitUpStock) -> float:
+        breakdown = self._quality_score_breakdown(stock)
+        return self._clamp_score(breakdown["score"])
+
+    def _quality_score_breakdown(self, stock: LimitUpStock) -> dict:
+        seal_timing = self._seal_timing_score(stock)
+        seal_stability = self._seal_stability_score(stock)
+        seal_strength = self._seal_strength_score(stock)
+        turnover_structure = self._turnover_structure_score(stock)
+        ladder_position = self._ladder_position_score(stock)
+        market_fit = 60.0
+        risk_penalty = self._stock_risk_penalty(stock)
         score = (
-                self._seal_timing_score(stock) * 0.22
-                + self._seal_stability_score(stock) * 0.18
-                + self._seal_strength_score(stock) * 0.20
-                + self._turnover_structure_score(stock) * 0.15
-                + self._ladder_position_score(stock) * 0.15
-                + 60.0 * 0.10
-                - self._stock_risk_penalty(stock)
+                seal_timing * 0.22
+                + seal_stability * 0.18
+                + seal_strength * 0.20
+                + turnover_structure * 0.15
+                + ladder_position * 0.15
+                + market_fit * 0.10
+                - risk_penalty
         )
-        return self._clamp_score(score)
+        return self._score_breakdown(
+            score=score,
+            seal_timing=seal_timing,
+            seal_stability=seal_stability,
+            seal_strength=seal_strength,
+            turnover_structure=turnover_structure,
+            ladder_position=ladder_position,
+            market_fit=market_fit,
+            risk_penalty=risk_penalty,
+        )
 
     def _sector_strength_score(
             self,
@@ -683,6 +714,53 @@ class MarketReviewService:
         )
         return self._clamp_score(score)
 
+    def _sector_strength_breakdown(
+            self,
+            items: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
+    ) -> dict:
+        if not items:
+            return self._score_breakdown(score=0.0)
+        limit_up_count = len(items)
+        open_count = sum(item.open_count or 0 for item in items)
+        top_quality = sorted((item.board_quality_score for item in items), reverse=True)[:3]
+        leader_quality = sum(top_quality) / len(top_quality) if top_quality else 0.0
+        total_seal = sum(item.seal_amount or 0 for item in items)
+        total_amount = sum(item.amount or 0 for item in items)
+        seal_amount_ratio = total_seal / total_amount if total_amount > 0 else 0.0
+        open_rate = open_count / max(limit_up_count, 1)
+        diffusion = self._limit_up_diffusion_score(limit_up_count)
+        ladder_completeness = self._sector_ladder_completeness_score(items)
+        capital_confirmation = (
+                self._ratio_score(seal_amount_ratio, [(0.10, 100), (0.06, 85), (0.03, 65), (0.015, 45), (0.0, 20)])
+                * 0.65
+                + (self._money_score(total_seal, 10) / 10) * 100 * 0.35
+        )
+        persistence = min(max((max(item.consecutive_boards for item in items) - 1) * 22, 25), 100)
+        market_environment = self._market_environment_score(items, environment)
+        risk_penalty = min(open_rate * 22, 28)
+        if limit_up_count == 1:
+            risk_penalty += 12
+        score = (
+                diffusion * 0.25
+                + ladder_completeness * 0.25
+                + leader_quality * 0.20
+                + capital_confirmation * 0.15
+                + persistence * 0.10
+                + market_environment * 0.05
+                - risk_penalty
+        )
+        return self._score_breakdown(
+            score=score,
+            limit_up_diffusion=diffusion,
+            ladder_completeness=ladder_completeness,
+            leader_quality=leader_quality,
+            capital_confirmation=capital_confirmation,
+            persistence=persistence,
+            market_environment=market_environment,
+            risk_penalty=risk_penalty,
+        )
+
     def _candidate_score(
             self,
             stock: LimitUpStock,
@@ -710,6 +788,44 @@ class MarketReviewService:
                 - risk_penalty
         )
         return self._clamp_score(score)
+
+    def _candidate_score_breakdown(
+            self,
+            stock: LimitUpStock,
+            sector: Optional[SectorStrength],
+            pool: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
+    ) -> dict:
+        sector_score = sector.strength_score if sector else 35.0
+        ladder_position = self._ladder_position_score(stock, pool)
+        next_day_expectation = self._next_day_expectation_score(stock, sector, pool)
+        market_environment = self._market_environment_score(pool, environment)
+        risk_penalty = 0.0
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            risk_penalty += 8
+        if stock.seal_amount and stock.amount and stock.seal_amount / max(stock.amount, 1) < 0.03:
+            risk_penalty += 8
+        if (stock.open_count or 0) >= 3:
+            risk_penalty += 12
+        if sector and sector.limit_up_count <= 1 and market_environment < 55:
+            risk_penalty += 8
+        score = (
+                stock.board_quality_score * 0.42
+                + sector_score * 0.28
+                + ladder_position * 0.15
+                + next_day_expectation * 0.10
+                + market_environment * 0.05
+                - risk_penalty
+        )
+        return self._score_breakdown(
+            score=score,
+            board_quality=stock.board_quality_score,
+            sector_strength=sector_score,
+            ladder_position=ladder_position,
+            next_day_expectation=next_day_expectation,
+            market_environment=market_environment,
+            risk_penalty=risk_penalty,
+        )
 
     def _divergence_signal_score(
             self,
@@ -747,6 +863,58 @@ class MarketReviewService:
                 - risk_penalty
         )
         return self._clamp_score(score)
+
+    def _divergence_signal_score_breakdown(
+            self,
+            stock: LimitUpStock,
+            sector: Optional[SectorStrength],
+            pool: List[LimitUpStock],
+            environment: Optional[MarketEnvironment] = None,
+    ) -> dict:
+        open_count = stock.open_count or 0
+        divergence_quality = 0.0
+        if open_count == 1:
+            divergence_quality = 92.0
+        elif open_count == 2:
+            divergence_quality = 72.0
+        elif open_count == 3:
+            divergence_quality = 48.0
+        elif open_count >= 4:
+            divergence_quality = 22.0
+        elif stock.last_limit_time and stock.first_limit_time and stock.last_limit_time > stock.first_limit_time:
+            divergence_quality = 56.0
+        reseal_strength = self._seal_strength_score(stock)
+        sector_return = sector.strength_score if sector else 30.0
+        leader_status = self._ladder_position_score(stock, pool)
+        market_environment = self._market_environment_score(pool, environment)
+        risk_penalty = 0.0
+        if open_count >= 4:
+            risk_penalty += 18
+        if stock.first_limit_time and stock.first_limit_time >= "143000":
+            risk_penalty += 10
+        score = (
+                divergence_quality * 0.30
+                + reseal_strength * 0.25
+                + sector_return * 0.25
+                + leader_status * 0.10
+                + market_environment * 0.10
+                - risk_penalty
+        )
+        return self._score_breakdown(
+            score=score,
+            divergence_quality=divergence_quality,
+            reseal_strength=reseal_strength,
+            sector_return=sector_return,
+            leader_status=leader_status,
+            market_environment=market_environment,
+            risk_penalty=risk_penalty,
+        )
+
+    @staticmethod
+    def _score_breakdown(score: float, **parts: float) -> dict:
+        result = {"score": round(max(min(score, 100.0), 0.0), 2)}
+        result.update({key: round(float(value), 2) for key, value in parts.items()})
+        return result
 
     @staticmethod
     def _seal_timing_score(stock: LimitUpStock) -> float:
@@ -1212,7 +1380,7 @@ class MarketReviewService:
                 start_date=start_date,
                 end_date=end_date,
                 adjust="qfq",
-                timeout=15,
+                timeout=self.KLINE_SOURCE_TIMEOUT_SECONDS,
             )),
             ("eastmoney-raw", lambda: ak.stock_zh_a_hist(
                 symbol=code,
@@ -1220,7 +1388,7 @@ class MarketReviewService:
                 start_date=start_date,
                 end_date=end_date,
                 adjust="",
-                timeout=15,
+                timeout=self.KLINE_SOURCE_TIMEOUT_SECONDS,
             )),
         ]
         if period == "daily" and hasattr(ak, "stock_zh_a_daily"):
@@ -1245,31 +1413,51 @@ class MarketReviewService:
                     start_date=start_date,
                     end_date=end_date,
                     adjust="qfq",
-                    timeout=15,
+                    timeout=self.KLINE_SOURCE_TIMEOUT_SECONDS,
                 )),
                 ("tencent-raw", lambda: ak.stock_zh_a_hist_tx(
                     symbol=self._tx_symbol(code),
                     start_date=start_date,
                     end_date=end_date,
                     adjust="",
-                    timeout=15,
+                    timeout=self.KLINE_SOURCE_TIMEOUT_SECONDS,
                 )),
             ])
 
         errors: List[str] = []
+        deadline = monotonic() + self.KLINE_TOTAL_TIMEOUT_SECONDS
         for source, fetcher in attempts:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                errors.append("total timeout")
+                break
             try:
-                frame = fetcher()
+                frame = self._call_with_timeout(fetcher, min(self.KLINE_SOURCE_TIMEOUT_SECONDS, remaining))
                 rows = frame.to_dict(orient="records")
                 bars = self._rows_to_kline_bars(rows, self._row_to_kline_bar, source, code)
                 if bars:
                     return bars[-limit:]
                 errors.append(f"{source}: empty")
+            except TimeoutError as exc:
+                logger.warning("AKShare daily kline fetch timed out for %s via %s", code, source)
+                errors.append(f"{source}: {exc}")
             except Exception as exc:
                 logger.warning("AKShare daily kline fetch failed for %s via %s: %s", code, source, exc)
                 errors.append(f"{source}: {exc}")
         logger.warning("AKShare daily kline unavailable for %s, attempts=%s", code, errors)
         raise MarketReviewUnavailable("个股 K 线数据暂不可用，请稍后重试")
+
+    @staticmethod
+    def _call_with_timeout(fetcher, timeout_seconds: float):
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(fetcher)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"timeout after {timeout_seconds:.1f}s") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _fetch_stock_kline_intraday(self, code: str, normalized_date: str, period: str) -> List[StockKlineBar]:
         ak = self._load_akshare()
@@ -1596,14 +1784,25 @@ class MarketReviewService:
         return signals[:3]
 
     def _get_previous_close(self, code: str, normalized_date: str) -> float:
+        if self.store and self.store.is_available():
+            try:
+                stored_bars = self.store.get_stock_kline_daily(code, 3, normalized_date)
+                previous_close = self._previous_close_from_bars(stored_bars, normalized_date)
+                if previous_close > 0:
+                    return previous_close
+            except MarketReviewStoreUnavailable as exc:
+                logger.warning("Market review previous close load skipped for %s: %s", code, exc)
         try:
             daily_bars = self._fetch_stock_kline_daily(code, normalized_date, 3)
         except MarketReviewUnavailable:
             return 0
+        return self._previous_close_from_bars(daily_bars, normalized_date)
+
+    @staticmethod
+    def _previous_close_from_bars(daily_bars: List[StockKlineBar], normalized_date: str) -> float:
         if len(daily_bars) < 2:
             return 0
-        target = normalized_date
-        previous_bars = [item for item in daily_bars if item.trade_date < target]
+        previous_bars = [item for item in daily_bars if item.trade_date < normalized_date]
         if not previous_bars:
             return daily_bars[-2].close_price
         return previous_bars[-1].close_price

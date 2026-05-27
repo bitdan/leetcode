@@ -9,7 +9,7 @@ import redis
 from auth.db_models import SysUser
 from auth.schemas import User, UserInfo
 from db.session import create_session_factory, session_scope
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ class UserRepository(ABC):
 
     @abstractmethod
     def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def count_users(self, keyword: Optional[str] = None) -> int:
         raise NotImplementedError
 
 
@@ -284,15 +288,22 @@ class InMemoryUserRepository(UserRepository):
         return record
 
     def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
-        records = list(self.users.values())
+        records = self._filter_users(keyword)
+        records.sort(key=lambda item: item.created_at, reverse=True)
+        return records[offset:offset + limit]
+
+    def count_users(self, keyword: Optional[str] = None) -> int:
+        return len(self._filter_users(keyword))
+
+    def _filter_users(self, keyword: Optional[str] = None) -> list[UserRecord]:
+        records = [item for item in self.users.values() if item.status != "deleted"]
         if keyword:
             q = keyword.lower()
             records = [
                 item for item in records
                 if q in item.username.lower() or q in item.user_id.lower() or q in (item.email or "").lower()
             ]
-        records.sort(key=lambda item: item.created_at, reverse=True)
-        return records[offset:offset + limit]
+        return records
 
 
 class RedisUserRepository(UserRepository):
@@ -337,19 +348,28 @@ class RedisUserRepository(UserRepository):
         return record
 
     def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
+        records = self._filter_users(keyword)
+        records.sort(key=lambda item: item.created_at, reverse=True)
+        return records[offset:offset + limit]
+
+    def count_users(self, keyword: Optional[str] = None) -> int:
+        return len(self._filter_users(keyword))
+
+    def _filter_users(self, keyword: Optional[str] = None) -> list[UserRecord]:
         records = []
         for key in self.redis_client.scan_iter(f"{self.USER_ID_KEY_PREFIX}*"):
             payload = self.redis_client.get(key)
             if payload:
-                records.append(self._deserialize(payload))
+                record = self._deserialize(payload)
+                if record.status != "deleted":
+                    records.append(record)
         if keyword:
             q = keyword.lower()
             records = [
                 item for item in records
                 if q in item.username.lower() or q in item.user_id.lower() or q in (item.email or "").lower()
             ]
-        records.sort(key=lambda item: item.created_at, reverse=True)
-        return records[offset:offset + limit]
+        return records
 
     def _persist(self, record: UserRecord) -> None:
         payload = json.dumps(record.__dict__, ensure_ascii=False)
@@ -456,16 +476,25 @@ class SqlAlchemyUserRepository(UserRepository):
 
     def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
         with session_scope(self.session_factory) as session:
-            stmt = select(SysUser).where(SysUser.status != "deleted")
-            if keyword:
-                pattern = f"%{keyword}%"
-                stmt = stmt.where(
-                    SysUser.username.ilike(pattern)
-                    | SysUser.user_id.ilike(pattern)
-                    | SysUser.email.ilike(pattern)
-                )
+            stmt = self._user_filter_stmt(select(SysUser), keyword)
             stmt = stmt.order_by(SysUser.created_at.desc()).offset(offset).limit(limit)
             return [self._deserialize(user) for user in session.scalars(stmt).all()]
+
+    def count_users(self, keyword: Optional[str] = None) -> int:
+        with session_scope(self.session_factory) as session:
+            stmt = self._user_filter_stmt(select(func.count()).select_from(SysUser), keyword)
+            return int(session.scalar(stmt) or 0)
+
+    def _user_filter_stmt(self, stmt, keyword: Optional[str] = None):
+        stmt = stmt.where(SysUser.status != "deleted")
+        if keyword:
+            pattern = f"%{keyword}%"
+            stmt = stmt.where(
+                SysUser.username.ilike(pattern)
+                | SysUser.user_id.ilike(pattern)
+                | SysUser.email.ilike(pattern)
+            )
+        return stmt
 
     def close(self) -> None:
         self.session_factory.kw["bind"].dispose()

@@ -74,8 +74,10 @@ class AuthAndGameApiTest(unittest.TestCase):
 
         users = self.client.get("/api/v1/admin/users", headers=admin_headers)
         self.assertEqual(200, users.status_code)
+        self.assertGreaterEqual(users.json()["data"]["total"], 2)
+        self.assertEqual(1, users.json()["data"]["page"])
         managed_user = next(
-            item for item in users.json()["data"]
+            item for item in users.json()["data"]["items"]
             if item["username"] == f"managed_{suffix}"
         )
 

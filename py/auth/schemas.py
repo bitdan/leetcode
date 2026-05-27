@@ -62,6 +62,13 @@ class AdminUser(BaseModel):
     updated_at: datetime
 
 
+class AdminUserPage(BaseModel):
+    items: List[AdminUser] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
 class UserProfileUpdate(BaseModel):
     email: Optional[str] = None
     avatar: Optional[str] = None

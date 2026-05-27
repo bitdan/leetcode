@@ -8,6 +8,7 @@ from auth.redis_client import redis_client
 from auth.schemas import (
     AdminPasswordReset,
     AdminUser,
+    AdminUserPage,
     AdminUserUpdate,
     ChangePasswordRequest,
     User,
@@ -114,13 +115,17 @@ class UserService:
         self._refresh_session_user_info(user_id)
         return True
 
-    def list_admin_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[AdminUser]:
-        safe_limit = max(1, min(limit, 200))
-        safe_offset = max(0, offset)
-        return [
-            self._build_admin_user(record)
-            for record in self.user_repository.list_users(keyword, safe_limit, safe_offset)
-        ]
+    def list_admin_users(self, keyword: Optional[str] = None, page: int = 1, page_size: int = 20) -> AdminUserPage:
+        safe_page = max(1, page)
+        safe_page_size = max(1, min(page_size, 100))
+        offset = (safe_page - 1) * safe_page_size
+        records = self.user_repository.list_users(keyword, safe_page_size, offset)
+        return AdminUserPage(
+            items=[self._build_admin_user(record) for record in records],
+            total=self.user_repository.count_users(keyword),
+            page=safe_page,
+            page_size=safe_page_size,
+        )
 
     def update_admin_user(self, target_user_id: str, payload: AdminUserUpdate) -> AdminUser:
         record = self.user_repository.get_by_user_id(target_user_id)

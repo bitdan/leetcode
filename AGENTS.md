@@ -68,6 +68,10 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
   top-level product areas as route groups, then include that group in the navigation filter.
 - Prefer Vuetify components and Material Design Icons (`mdi-*`) for controls. Keep pages usable as the first screen;
   do not add marketing-style landing pages for internal tools or app features.
+- For common UI patterns such as tables, forms, dialogs, pagination, tabs, menus, filters, and loading/empty states,
+  prefer Vuetify or existing project components first. If the existing component set cannot cover the interaction
+  cleanly, evaluate adding a mature, well-maintained dependency. Hand-written low-level HTML/CSS implementations should
+  be the last option, used only when component-based approaches are unsuitable.
 - For complex frontend interactions or domain-heavy widgets, first evaluate mature, well-maintained components or
   libraries instead of hand-rolling core behavior. Examples include financial charts, rich editors, graph/network
   visualizations, calendars, maps, drag-and-drop builders, and virtualized data grids.

@@ -21,6 +21,7 @@ class UserRecord:
     password_hash: str
     email: Optional[str]
     avatar: Optional[str]
+    status: str
     roles: list
     permissions: list
     created_at: str
@@ -46,6 +47,10 @@ class UserRepository(ABC):
 
     @abstractmethod
     def update(self, record: UserRecord) -> UserRecord:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
         raise NotImplementedError
 
 
@@ -250,6 +255,7 @@ class InMemoryUserRepository(UserRepository):
                 password_hash=jwt_handler.get_password_hash("123456"),
                 email="admin@example.com",
                 avatar=None,
+                status="active",
                 roles=["admin"],
                 permissions=["*"],
                 created_at=now,
@@ -276,6 +282,17 @@ class InMemoryUserRepository(UserRepository):
     def update(self, record: UserRecord) -> UserRecord:
         self.users[record.username] = record
         return record
+
+    def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
+        records = list(self.users.values())
+        if keyword:
+            q = keyword.lower()
+            records = [
+                item for item in records
+                if q in item.username.lower() or q in item.user_id.lower() or q in (item.email or "").lower()
+            ]
+        records.sort(key=lambda item: item.created_at, reverse=True)
+        return records[offset:offset + limit]
 
 
 class RedisUserRepository(UserRepository):
@@ -319,6 +336,21 @@ class RedisUserRepository(UserRepository):
         self._persist(record)
         return record
 
+    def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
+        records = []
+        for key in self.redis_client.scan_iter(f"{self.USER_ID_KEY_PREFIX}*"):
+            payload = self.redis_client.get(key)
+            if payload:
+                records.append(self._deserialize(payload))
+        if keyword:
+            q = keyword.lower()
+            records = [
+                item for item in records
+                if q in item.username.lower() or q in item.user_id.lower() or q in (item.email or "").lower()
+            ]
+        records.sort(key=lambda item: item.created_at, reverse=True)
+        return records[offset:offset + limit]
+
     def _persist(self, record: UserRecord) -> None:
         payload = json.dumps(record.__dict__, ensure_ascii=False)
         pipe = self.redis_client.pipeline()
@@ -334,6 +366,7 @@ class RedisUserRepository(UserRepository):
             password_hash=self.jwt_handler.get_password_hash("123456"),
             email="admin@example.com",
             avatar=None,
+            status="active",
             roles=["admin"],
             permissions=["*"],
             created_at=now,
@@ -359,6 +392,7 @@ class RedisUserRepository(UserRepository):
             password_hash=data["password_hash"],
             email=data.get("email"),
             avatar=data.get("avatar"),
+            status=data.get("status", "active"),
             roles=list(data.get("roles", [])),
             permissions=list(data.get("permissions", [])),
             created_at=data["created_at"],
@@ -385,7 +419,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
     def get_by_user_id(self, user_id: str) -> Optional[UserRecord]:
         with session_scope(self.session_factory) as session:
-            user = session.scalar(select(SysUser).where(SysUser.user_id == user_id, SysUser.status == "active"))
+            user = session.scalar(select(SysUser).where(SysUser.user_id == user_id, SysUser.status != "deleted"))
             return self._deserialize(user) if user else None
 
     def save(self, record: UserRecord) -> UserRecord:
@@ -397,6 +431,7 @@ class SqlAlchemyUserRepository(UserRepository):
                     password_hash=record.password_hash,
                     email=record.email,
                     avatar=record.avatar,
+                    status=record.status,
                     roles=list(record.roles),
                     permissions=list(record.permissions),
                     created_at=datetime.fromisoformat(record.created_at),
@@ -407,16 +442,30 @@ class SqlAlchemyUserRepository(UserRepository):
 
     def update(self, record: UserRecord) -> UserRecord:
         with session_scope(self.session_factory) as session:
-            user = session.scalar(select(SysUser).where(SysUser.user_id == record.user_id, SysUser.status == "active"))
+            user = session.scalar(select(SysUser).where(SysUser.user_id == record.user_id, SysUser.status != "deleted"))
             if user:
                 user.username = record.username
                 user.password_hash = record.password_hash
                 user.email = record.email
                 user.avatar = record.avatar
+                user.status = record.status
                 user.roles = list(record.roles)
                 user.permissions = list(record.permissions)
                 user.updated_at = datetime.fromisoformat(record.updated_at)
         return record
+
+    def list_users(self, keyword: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[UserRecord]:
+        with session_scope(self.session_factory) as session:
+            stmt = select(SysUser).where(SysUser.status != "deleted")
+            if keyword:
+                pattern = f"%{keyword}%"
+                stmt = stmt.where(
+                    SysUser.username.ilike(pattern)
+                    | SysUser.user_id.ilike(pattern)
+                    | SysUser.email.ilike(pattern)
+                )
+            stmt = stmt.order_by(SysUser.created_at.desc()).offset(offset).limit(limit)
+            return [self._deserialize(user) for user in session.scalars(stmt).all()]
 
     def close(self) -> None:
         self.session_factory.kw["bind"].dispose()
@@ -432,6 +481,7 @@ class SqlAlchemyUserRepository(UserRepository):
                 password_hash=self.jwt_handler.get_password_hash("123456"),
                 email="admin@example.com",
                 avatar=None,
+                status="active",
                 roles=["admin"],
                 permissions=["*"],
                 created_at=now,
@@ -446,6 +496,7 @@ class SqlAlchemyUserRepository(UserRepository):
             password_hash=user.password_hash,
             email=user.email,
             avatar=user.avatar,
+            status=user.status,
             roles=list(user.roles or []),
             permissions=list(user.permissions or []),
             created_at=self._datetime_to_iso(user.created_at),

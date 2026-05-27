@@ -50,6 +50,18 @@ class UserInfo(BaseModel):
     permissions: List[str] = Field(default_factory=list)
 
 
+class AdminUser(BaseModel):
+    user_id: str
+    username: str
+    email: Optional[str] = None
+    avatar: Optional[str] = None
+    status: str
+    roles: List[str] = Field(default_factory=list)
+    permissions: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
 class UserProfileUpdate(BaseModel):
     email: Optional[str] = None
     avatar: Optional[str] = None
@@ -57,6 +69,19 @@ class UserProfileUpdate(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     oldPassword: str
+    newPassword: str
+    confirmPassword: str
+
+
+class AdminUserUpdate(BaseModel):
+    email: Optional[str] = None
+    avatar: Optional[str] = None
+    status: Optional[str] = None
+    roles: Optional[List[str]] = None
+    permissions: Optional[List[str]] = None
+
+
+class AdminPasswordReset(BaseModel):
     newPassword: str
     confirmPassword: str
 

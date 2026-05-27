@@ -62,6 +62,64 @@ class AuthAndGameApiTest(unittest.TestCase):
         after_logout = self.client.get("/api/v1/getInfo", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(401, after_logout.status_code)
 
+    def test_admin_user_management(self):
+        suffix = str(int(time.time() * 1000))
+        user_token = self.register_user(f"managed_{suffix}")
+        admin_token = self.login_admin()
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        user_headers = {"Authorization": f"Bearer {user_token}"}
+
+        forbidden = self.client.get("/api/v1/admin/users", headers=user_headers)
+        self.assertEqual(403, forbidden.status_code)
+
+        users = self.client.get("/api/v1/admin/users", headers=admin_headers)
+        self.assertEqual(200, users.status_code)
+        managed_user = next(
+            item for item in users.json()["data"]
+            if item["username"] == f"managed_{suffix}"
+        )
+
+        reset = self.client.put(
+            f"/api/v1/admin/users/{managed_user['user_id']}/password",
+            headers=admin_headers,
+            json={"newPassword": "654321", "confirmPassword": "654321"},
+        )
+        self.assertEqual(200, reset.status_code)
+
+        old_session = self.client.get("/api/v1/getInfo", headers=user_headers)
+        self.assertEqual(401, old_session.status_code)
+
+        captcha = self.client.get("/api/v1/captchaImage").json()["data"]
+        login = self.client.post(
+            "/api/v1/login",
+            json={
+                "username": f"managed_{suffix}",
+                "password": "654321",
+                "code": "TEST",
+                "uuid": captcha["uuid"],
+            },
+        )
+        self.assertEqual(200, login.status_code)
+
+        update = self.client.put(
+            f"/api/v1/admin/users/{managed_user['user_id']}",
+            headers=admin_headers,
+            json={"status": "disabled", "roles": ["user"], "permissions": []},
+        )
+        self.assertEqual(200, update.status_code)
+        self.assertEqual("disabled", update.json()["data"]["status"])
+
+        disabled_login = self.client.post(
+            "/api/v1/login",
+            json={
+                "username": f"managed_{suffix}",
+                "password": "654321",
+                "code": "TEST",
+                "uuid": captcha["uuid"],
+            },
+        )
+        self.assertEqual(401, disabled_login.status_code)
+
     def test_game_room_lifecycle(self):
         suffix = str(int(time.time() * 1000))
         token = self.register_user(f"room_{suffix}")

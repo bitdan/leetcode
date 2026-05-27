@@ -2,6 +2,8 @@ import logging
 
 from auth.captcha import generate_captcha_payload
 from auth.schemas import (
+    AdminPasswordReset,
+    AdminUserUpdate,
     ApiResponse,
     ChangePasswordRequest,
     TotpAccountUpsert,
@@ -36,6 +38,11 @@ def create_router(container) -> APIRouter:
         return user_info
 
     router.get_current_user = get_current_user
+
+    async def get_current_admin(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
+        if "admin" not in current_user.roles and "*" not in current_user.permissions:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+        return current_user
 
     def set_auth_cookie(response: Response, token: str) -> None:
         response.set_cookie(
@@ -106,6 +113,32 @@ def create_router(container) -> APIRouter:
         try:
             user_service.change_password(current_user.user.user_id, payload)
             return ApiResponse(code=200, msg="修改密码成功")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.get("/admin/users", response_model=ApiResponse)
+    async def list_admin_users(keyword: str = "", limit: int = 100, offset: int = 0,
+                               current_user: UserInfo = Depends(get_current_admin)):
+        data = user_service.list_admin_users(keyword.strip() or None, limit, offset)
+        data_list = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item.dict() for item in data]
+        return ApiResponse(code=200, msg="获取用户列表成功", data=data_list)
+
+    @router.put("/admin/users/{user_id}", response_model=ApiResponse)
+    async def update_admin_user(user_id: str, payload: AdminUserUpdate,
+                                current_user: UserInfo = Depends(get_current_admin)):
+        try:
+            data = user_service.update_admin_user(user_id, payload)
+            data_dict = data.model_dump(mode="json") if hasattr(data, "model_dump") else data.dict()
+            return ApiResponse(code=200, msg="更新用户成功", data=data_dict)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    @router.put("/admin/users/{user_id}/password", response_model=ApiResponse)
+    async def reset_admin_user_password(user_id: str, payload: AdminPasswordReset,
+                                        current_user: UserInfo = Depends(get_current_admin)):
+        try:
+            user_service.reset_admin_user_password(user_id, payload)
+            return ApiResponse(code=200, msg="重置密码成功")
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 

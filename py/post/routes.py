@@ -2,6 +2,7 @@ import logging
 
 from auth.routes import AUTH_COOKIE_NAME
 from auth.schemas import ApiResponse, UserInfo
+from common.pagination import Pagination
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from post.schemas import PostCommentCreateRequest, PostCreateRequest, PostListData, PostUpdateRequest
 from post.store import PostStoreUnavailable
@@ -35,8 +36,7 @@ def create_router(container) -> APIRouter:
             keyword: str = Query(default="", max_length=120),
             category: str = Query(default="", max_length=64),
             tag: str = Query(default="", max_length=64),
-            page: int = Query(default=1, ge=1),
-            page_size: int = Query(default=10, ge=1, le=50),
+            pagination: Pagination = Depends(),
             current_user: UserInfo = Depends(get_optional_user),
     ):
         try:
@@ -44,11 +44,11 @@ def create_router(container) -> APIRouter:
                 keyword=keyword,
                 category=category,
                 tag=tag,
-                page=page,
-                page_size=page_size,
+                page=pagination.page,
+                page_size=pagination.page_size,
                 current_user=current_user,
             )
-            data = PostListData(items=items, total=total, page=page, page_size=page_size)
+            data = PostListData.from_pagination(items, total, pagination)
             return ApiResponse(code=200, msg="获取帖子列表成功", data=dump_model(data))
         except PostStoreUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))

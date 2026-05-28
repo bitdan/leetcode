@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any, List, Optional
 
+from common.pagination import Pagination
 from pydantic import BaseModel, Field
 
 
@@ -66,7 +67,11 @@ class AdminUserPage(BaseModel):
     items: List[AdminUser] = Field(default_factory=list)
     total: int = 0
     page: int = 1
-    page_size: int = 20
+    page_size: int = 10
+
+    @classmethod
+    def from_pagination(cls, items: List[AdminUser], total: int, pagination: Pagination):
+        return cls(items=items, total=total, page=pagination.page, page_size=pagination.page_size)
 
 
 class UserProfileUpdate(BaseModel):

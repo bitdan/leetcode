@@ -3,6 +3,7 @@ import logging
 from auth.captcha import generate_captcha_payload
 from auth.schemas import (
     AdminPasswordReset,
+    AdminUserPage,
     AdminUserUpdate,
     ApiResponse,
     ChangePasswordRequest,
@@ -13,6 +14,7 @@ from auth.schemas import (
     UserLogin,
     UserProfileUpdate,
 )
+from common.pagination import Pagination
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -117,9 +119,10 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     @router.get("/admin/users", response_model=ApiResponse)
-    async def list_admin_users(keyword: str = "", page: int = 1, page_size: int = 20,
+    async def list_admin_users(keyword: str = "", pagination: Pagination = Depends(),
                                current_user: UserInfo = Depends(get_current_admin)):
-        data = user_service.list_admin_users(keyword.strip() or None, page, page_size)
+        data = user_service.list_admin_users(keyword.strip() or None, pagination.page, pagination.page_size)
+        data = AdminUserPage.from_pagination(data.items, data.total, pagination)
         data_dict = data.model_dump(mode="json") if hasattr(data, "model_dump") else data.dict()
         return ApiResponse(code=200, msg="获取用户列表成功", data=data_dict)
 

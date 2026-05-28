@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
+from common.pagination import Pagination
 from pydantic import BaseModel, Field
 
 
@@ -44,6 +45,10 @@ class PostListData(BaseModel):
     total: int
     page: int
     page_size: int
+
+    @classmethod
+    def from_pagination(cls, items: List[PostItem], total: int, pagination: Pagination):
+        return cls(items=items, total=total, page=pagination.page, page_size=pagination.page_size)
 
 
 class PostCommentItem(BaseModel):

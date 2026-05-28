@@ -68,6 +68,21 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
   top-level product areas as route groups, then include that group in the navigation filter.
 - Prefer Vuetify components and Material Design Icons (`mdi-*`) for controls. Keep pages usable as the first screen;
   do not add marketing-style landing pages for internal tools or app features.
+- Product style should feel like a polished internal tool hub: quiet, fast to scan, and immediately actionable. Prefer
+  dense but orderly layouts, restrained borders, subtle shadows, and clear hierarchy over decorative card-heavy pages.
+- Keep the established Tool Hub visual language consistent: use the shared CSS tokens in `tool-hub/src/main.css`,
+  8px radii for cards and panels, neutral slate surfaces, blue primary actions, and small tonal accents for status or
+  category cues. Avoid one-off palettes, oversized hero typography inside tool pages, and purely ornamental gradients.
+- The home page may keep a distinctive visual background, but it must primarily serve tool discovery. Include searchable
+  or scannable entry points such as featured tools, categories, recent tools, or quick actions rather than a passive
+  showcase.
+- Use route metadata in `tool-hub/src/router/index.ts` as the source of truth for navigable UI. Add meaningful
+  `title`, `description`, `icon`, `keywords`, and `featured` metadata when adding public pages so navigation search and
+  the home launcher stay useful.
+- Prefer `ToolPageLayout` for individual tool pages. Use its compact/workspace variants for full-screen work areas such
+  as AI chat or data dashboards, and avoid duplicating the page title when the layout already renders one.
+- Avoid global element styles that fight Vuetify, especially broad `button`, `input`, or `textarea` rules. If a native
+  element is unavoidable, scope its styles to the page/component and make it visually compatible with Vuetify controls.
 - For common UI patterns such as tables, forms, dialogs, pagination, tabs, menus, filters, and loading/empty states,
   prefer Vuetify or existing project components first. If the existing component set cannot cover the interaction
   cleanly, evaluate adding a mature, well-maintained dependency. Hand-written low-level HTML/CSS implementations should

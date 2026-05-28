@@ -66,12 +66,17 @@ class AdminUser(BaseModel):
 class AdminUserPage(BaseModel):
     items: List[AdminUser] = Field(default_factory=list)
     total: int = 0
+    total_active: int = 0
+    total_disabled: int = 0
+    total_frozen: int = 0
     page: int = 1
     page_size: int = 10
 
     @classmethod
-    def from_pagination(cls, items: List[AdminUser], total: int, pagination: Pagination):
-        return cls(items=items, total=total, page=pagination.page, page_size=pagination.page_size)
+    def from_pagination(cls, items: List[AdminUser], total: int, pagination: Pagination,
+                        total_active: int = 0, total_disabled: int = 0, total_frozen: int = 0):
+        return cls(items=items, total=total, page=pagination.page, page_size=pagination.page_size,
+                   total_active=total_active, total_disabled=total_disabled, total_frozen=total_frozen)
 
 
 class UserProfileUpdate(BaseModel):

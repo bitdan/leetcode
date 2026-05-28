@@ -122,11 +122,15 @@ class UserService:
         safe_page_size = max(1, min(page_size, 100))
         offset = (safe_page - 1) * safe_page_size
         records = self.user_repository.list_users(keyword, safe_page_size, offset)
+        status_counts = self.user_repository.count_users_by_status(keyword)
         return AdminUserPage(
             items=[self._build_admin_user(record) for record in records],
             total=self.user_repository.count_users(keyword),
             page=safe_page,
             page_size=safe_page_size,
+            total_active=status_counts.get("active", 0),
+            total_disabled=status_counts.get("disabled", 0),
+            total_frozen=status_counts.get("frozen", 0),
         )
 
     def update_admin_user(self, target_user_id: str, payload: AdminUserUpdate) -> AdminUser:

@@ -122,7 +122,8 @@ def create_router(container) -> APIRouter:
     async def list_admin_users(keyword: str = "", pagination: Pagination = Depends(),
                                current_user: UserInfo = Depends(get_current_admin)):
         data = user_service.list_admin_users(keyword.strip() or None, pagination.page, pagination.page_size)
-        data = AdminUserPage.from_pagination(data.items, data.total, pagination)
+        data = AdminUserPage.from_pagination(data.items, data.total, pagination,
+                                             data.total_active, data.total_disabled, data.total_frozen)
         data_dict = data.model_dump(mode="json") if hasattr(data, "model_dump") else data.dict()
         return ApiResponse(code=200, msg="获取用户列表成功", data=data_dict)
 

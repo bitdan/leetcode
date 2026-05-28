@@ -57,6 +57,10 @@ class UserRepository(ABC):
     def count_users(self, keyword: Optional[str] = None) -> int:
         raise NotImplementedError
 
+    @abstractmethod
+    def count_users_by_status(self, keyword: Optional[str] = None) -> dict[str, int]:
+        raise NotImplementedError
+
 
 class SessionStore(ABC):
     @abstractmethod
@@ -295,6 +299,14 @@ class InMemoryUserRepository(UserRepository):
     def count_users(self, keyword: Optional[str] = None) -> int:
         return len(self._filter_users(keyword))
 
+    def count_users_by_status(self, keyword: Optional[str] = None) -> dict[str, int]:
+        records = self._filter_users(keyword)
+        return {
+            "active": sum(1 for r in records if r.status == "active"),
+            "disabled": sum(1 for r in records if r.status == "disabled"),
+            "frozen": sum(1 for r in records if r.status == "frozen"),
+        }
+
     def _filter_users(self, keyword: Optional[str] = None) -> list[UserRecord]:
         records = [item for item in self.users.values() if item.status != "deleted"]
         if keyword:
@@ -354,6 +366,14 @@ class RedisUserRepository(UserRepository):
 
     def count_users(self, keyword: Optional[str] = None) -> int:
         return len(self._filter_users(keyword))
+
+    def count_users_by_status(self, keyword: Optional[str] = None) -> dict[str, int]:
+        records = self._filter_users(keyword)
+        return {
+            "active": sum(1 for r in records if r.status == "active"),
+            "disabled": sum(1 for r in records if r.status == "disabled"),
+            "frozen": sum(1 for r in records if r.status == "frozen"),
+        }
 
     def _filter_users(self, keyword: Optional[str] = None) -> list[UserRecord]:
         records = []
@@ -484,6 +504,16 @@ class SqlAlchemyUserRepository(UserRepository):
         with session_scope(self.session_factory) as session:
             stmt = self._user_filter_stmt(select(func.count()).select_from(SysUser), keyword)
             return int(session.scalar(stmt) or 0)
+
+    def count_users_by_status(self, keyword: Optional[str] = None) -> dict[str, int]:
+        with session_scope(self.session_factory) as session:
+            result = {"active": 0, "disabled": 0, "frozen": 0}
+            for status in ("active", "disabled", "frozen"):
+                stmt = self._user_filter_stmt(
+                    select(func.count()).select_from(SysUser), keyword
+                ).where(SysUser.status == status)
+                result[status] = int(session.scalar(stmt) or 0)
+            return result
 
     def _user_filter_stmt(self, stmt, keyword: Optional[str] = None):
         stmt = stmt.where(SysUser.status != "deleted")

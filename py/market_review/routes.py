@@ -60,9 +60,9 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     @router.get("/limit-up-pool", response_model=ApiResponse)
-    async def limit_up_pool(date: str = Query(default="")):
+    async def limit_up_pool(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
-            data = [dump_model(item) for item in service.review(date or None).limit_up_pool]
+            data = [dump_model(item) for item in service.review(date or None, refresh=refresh).limit_up_pool]
             return ApiResponse(code=200, msg="获取涨停池成功", data=data)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -70,9 +70,9 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/sector-strength", response_model=ApiResponse)
-    async def sector_strength(date: str = Query(default="")):
+    async def sector_strength(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
-            data = [dump_model(item) for item in service.review(date or None).sector_strength]
+            data = [dump_model(item) for item in service.review(date or None, refresh=refresh).sector_strength]
             return ApiResponse(code=200, msg="获取板块强度成功", data=data)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -80,9 +80,9 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/2-to-3", response_model=ApiResponse)
-    async def candidates_2_to_3(date: str = Query(default="")):
+    async def candidates_2_to_3(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
-            data = [dump_model(item) for item in service.review(date or None).candidates_2_to_3]
+            data = [dump_model(item) for item in service.review(date or None, refresh=refresh).candidates_2_to_3]
             return ApiResponse(code=200, msg="获取 2进3 候选成功", data=data)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -90,9 +90,9 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/advancement", response_model=ApiResponse)
-    async def advancement_candidates(date: str = Query(default="")):
+    async def advancement_candidates(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
-            data = [dump_model(item) for item in service.review(date or None).advancement_candidates]
+            data = [dump_model(item) for item in service.review(date or None, refresh=refresh).advancement_candidates]
             return ApiResponse(code=200, msg="获取连板晋级候选成功", data=data)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -100,11 +100,15 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/candidates/{pool_type}", response_model=ApiResponse)
-    async def candidates_by_pool_type(pool_type: str, date: str = Query(default="")):
+    async def candidates_by_pool_type(
+            pool_type: str,
+            date: str = Query(default=""),
+            refresh: bool = Query(default=False),
+    ):
         try:
             data = [
                 dump_model(item)
-                for item in service.review(date or None).advancement_candidates
+                for item in service.review(date or None, refresh=refresh).advancement_candidates
                 if item.pool_type == service._normalize_pool_type(pool_type)
             ]
             return ApiResponse(code=200, msg="获取连板候选成功", data=data)
@@ -114,9 +118,9 @@ def create_router(container) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
     @router.get("/divergence-consensus", response_model=ApiResponse)
-    async def divergence_consensus(date: str = Query(default="")):
+    async def divergence_consensus(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:
-            data = [dump_model(item) for item in service.review(date or None).divergence_consensus]
+            data = [dump_model(item) for item in service.review(date or None, refresh=refresh).divergence_consensus]
             return ApiResponse(code=200, msg="获取分歧转一致识别成功", data=data)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

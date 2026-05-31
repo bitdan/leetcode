@@ -186,6 +186,8 @@ class FakeMarketReviewStore:
         self.status_payload = None
         self.kline_bars = []
         self.intraday_bars = []
+        self.get_daily_kline_calls = []
+        self.get_intraday_kline_calls = []
         self.saved_kline = []
         self.saved_intraday = []
         self.stock_name = ""
@@ -208,12 +210,14 @@ class FakeMarketReviewStore:
         return self.status_payload or {"date": trade_date, "status": "success"}
 
     def get_stock_kline_daily(self, code, limit, end_date):
+        self.get_daily_kline_calls.append((code, limit, end_date))
         return self.kline_bars[-limit:]
 
     def save_stock_kline_daily(self, code, name, bars):
         self.saved_kline.append((code, name, bars))
 
     def get_stock_kline_intraday(self, code, period, trade_date):
+        self.get_intraday_kline_calls.append((code, period, trade_date))
         return self.intraday_bars
 
     def save_stock_kline_intraday(self, code, name, period, trade_date, bars):
@@ -360,6 +364,22 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(11.3, result.summary.latest_price)
         self.assertTrue(result.technical_tags)
         self.assertEqual(0, len(store.saved_kline))
+
+    def test_today_intraday_stock_kline_bypasses_stored_bars(self):
+        store = FakeMarketReviewStore()
+        store.kline_bars = build_kline_bars()
+        service = MarketReviewService(store=store, cache_ttl_seconds=300)
+        service._now = lambda: datetime(2026, 5, 22, 10, 30, 0)
+        fresh_bars = build_kline_bars()
+        fresh_bars[-1].close_price = 12.0
+        fresh_bars[-1].change_amount = 1.1
+        service._fetch_stock_kline_daily = lambda *args, **kwargs: fresh_bars
+
+        result = service.stock_kline("000001", "2026-05-22", limit=60)
+
+        self.assertEqual([], store.get_daily_kline_calls)
+        self.assertEqual(1, len(store.saved_kline))
+        self.assertEqual(12.0, result.summary.latest_price)
 
     def test_stock_kline_fetches_and_persists_when_store_empty(self):
         store = FakeMarketReviewStore()

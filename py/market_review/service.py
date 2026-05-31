@@ -385,12 +385,13 @@ class MarketReviewService:
         normalized_date = self._normalize_date(trading_date)
         normalized_period = self._normalize_kline_period(period)
         normalized_limit = max(1, min(limit, 240))
+        use_stored_bars = not refresh and self._snapshot_status(normalized_date) == SNAPSHOT_FINAL
         bars: List[StockKlineBar] = []
 
         if normalized_period == "five_day":
             bars = self._fetch_stock_kline_five_day(normalized_code, normalized_date)
         elif normalized_period == "day":
-            if not refresh and self.store and self.store.is_available():
+            if use_stored_bars and self.store and self.store.is_available():
                 try:
                     bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
                 except MarketReviewStoreUnavailable as exc:
@@ -413,7 +414,7 @@ class MarketReviewService:
             )
             bars = self._aggregate_kline_bars(daily_bars, "year")[-normalized_limit:]
         else:
-            if not refresh and self.store and self.store.is_available():
+            if use_stored_bars and self.store and self.store.is_available():
                 try:
                     bars = self.store.get_stock_kline_intraday(normalized_code, normalized_period, normalized_date)
                 except MarketReviewStoreUnavailable as exc:

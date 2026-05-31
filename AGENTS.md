@@ -73,6 +73,54 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
 - Keep the established Tool Hub visual language consistent: use the shared CSS tokens in `tool-hub/src/main.css`,
   8px radii for cards and panels, neutral slate surfaces, blue primary actions, and small tonal accents for status or
   category cues. Avoid one-off palettes, oversized hero typography inside tool pages, and purely ornamental gradients.
+- **Design tokens (`tool-hub/src/main.css`)** — all custom CSS must reference these variables instead of hardcoded hex
+  colors. The token file also defines shared utility classes for common patterns.
+
+  **Color tokens:**
+  | Variable | Value | Usage |
+  |---|---|---|
+  | `--color-primary` | `#2563eb` | Primary actions, links, focus rings |
+  | `--color-primary-light` | `#dbeafe` | Primary tint backgrounds (badges, pills) |
+  | `--color-primary-dark` | `#1d4ed8` | Active/hover states |
+  | `--color-surface` | `#ffffff` | Card and panel backgrounds |
+  | `--color-surface-elevated` | `rgba(255,255,255,0.7)` | Glass card backgrounds |
+  | `--color-bg` | `#f8fafc` | Page background |
+  | `--color-text` | `#0f172a` | Primary text |
+  | `--color-text-muted` | `#64748b` | Secondary text, descriptions |
+  | `--color-text-subtle` | `#94a3b8` | Placeholder, disabled text |
+  | `--color-border` | `#e2e8f0` | Card/input borders |
+  | `--color-success` | `#16a34a` | Success states |
+  | `--color-warning` | `#d97706` | Warning states |
+  | `--color-error` | `#dc2626` | Error states |
+  | `--color-info` | `#0ea5e9` | Info states |
+
+  **Spacing & shape tokens:**
+  | Variable | Value |
+  |---|---|
+  | `--radius-card` | `16px` |
+  | `--radius-element` | `8px` |
+  | `--radius-pill` | `9999px` |
+  | `--shadow-card` | `0 4px 24px rgba(15,23,42,0.06)` |
+  | `--shadow-card-hover` | `0 8px 32px rgba(15,23,42,0.10)` |
+
+  **Shared utility classes (defined in `main.css`):**
+  | Class | Purpose |
+  |---|---|
+  | `.glass-card` | Translucent card with backdrop blur — use for elevated content panels |
+  | `.solid-card` | Opaque white card with border — use for nested sections inside a glass card |
+  | `.page-container` | Max-width centered wrapper for standalone pages (not needed inside `ToolPageLayout`) |
+  | `.page-header` | Flex row with `h1` + `p` — use only on pages that do NOT use `ToolPageLayout` |
+  | `.section-header` | Flex row with `h2` — for sub-sections within a card |
+  | `.empty-state` | Centered placeholder with icon and text — use for zero-data states |
+  | `.score-bar` / `.score-text` / `.score-track` / `.score-fill` | Horizontal score meter (market views) |
+  | `.chip-row` | Flex wrap container for `v-chip` groups |
+  | `.up-text` / `.down-text` / `.flat-text` | Red/green/grey text for financial change indicators |
+
+- **Vuetify theme** is defined in `tool-hub/src/main.ts` and is kept in sync with the CSS tokens above. Use Vuetify
+  color props (`color="primary"`, `color="success"`, etc.) on Vuetify components rather than raw hex values.
+- **Tailwind theme** in `tailwind.config.js` extends the default palette with matching `primary` and `surface` color
+  scales plus `rounded-card` and `shadow-card` utilities. Prefer the shared CSS classes (`glass-card`, `solid-card`)
+  over chaining Tailwind utilities for card patterns.
 - The home page may keep a distinctive visual background, but it must primarily serve tool discovery. Include searchable
   or scannable entry points such as featured tools, categories, recent tools, or quick actions rather than a passive
   showcase.
@@ -81,6 +129,9 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
   the home launcher stay useful.
 - Prefer `ToolPageLayout` for individual tool pages. Use its compact/workspace variants for full-screen work areas such
   as AI chat or data dashboards, and avoid duplicating the page title when the layout already renders one.
+- `ToolPageLayout` reads `title`, `description`, and `icon` from `route.meta` automatically — do not add a second
+  `<h1>` or page header inside the slot. Set `:card="false"` for full-bleed layouts (chat, canvas editors, dashboards),
+  and use the default `card=true` for standard tool pages that benefit from a contained white card.
 - Avoid global element styles that fight Vuetify, especially broad `button`, `input`, or `textarea` rules. If a native
   element is unavoidable, scope its styles to the page/component and make it visually compatible with Vuetify controls.
 - For common UI patterns such as tables, forms, dialogs, pagination, tabs, menus, filters, and loading/empty states,

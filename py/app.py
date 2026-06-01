@@ -14,6 +14,7 @@ from game.routes import create_router as create_game_router
 from market_review.routes import create_router as create_market_review_router
 from mcp_server.server import create_router as create_mcp_router
 from post.routes import create_router as create_post_router
+from project_agent.routes import create_router as create_project_agent_router
 
 
 def create_app() -> FastAPI:
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(create_market_review_router(container))
     app.include_router(create_agent_chat_router(container))
     app.include_router(create_agent_eval_router(container))
+    app.include_router(create_project_agent_router(container))
     app.include_router(create_mcp_router(container))
 
     @app.get("/health")

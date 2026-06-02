@@ -100,9 +100,79 @@ class MarketReviewService:
 
         rows = frame.to_dict(orient="records")
         stocks = [self._row_to_limit_up_stock(row) for row in rows]
+        known_codes = {item.code for item in stocks}
+        stocks.extend(self._fetch_missing_limit_up_strong_stocks(ak, normalized_date, known_codes))
+        stocks.extend(self._fetch_missing_st_limit_up_stocks(ak, normalized_date, known_codes))
         result = sorted(stocks, key=lambda item: (-item.consecutive_boards, item.first_limit_time or "999999"))
         self._limit_up_cache[normalized_date] = (monotonic(), result)
         return result
+
+    def _fetch_missing_limit_up_strong_stocks(self, ak: Any, normalized_date: str, known_codes: set) -> List[LimitUpStock]:
+        try:
+            frame = ak.stock_zt_pool_strong_em(date=normalized_date.replace("-", ""))
+        except Exception as exc:
+            logger.warning("Strong limit-up pool supplement skipped: %s", exc)
+            return []
+
+        result = []
+        for row in frame.to_dict(orient="records"):
+            code = str(self._pick(row, "代码", "股票代码", default="")).zfill(6)
+            if not code or code in known_codes or not self._is_limit_price_row(row):
+                continue
+            stock = self._row_to_limit_up_stock(row)
+            stock.tags = list(dict.fromkeys([*stock.tags, "强势池补充"]))
+            result.append(stock)
+            known_codes.add(stock.code)
+        return result
+
+    def _fetch_missing_st_limit_up_stocks(self, ak: Any, normalized_date: str, known_codes: set) -> List[LimitUpStock]:
+        if normalized_date != date.today().strftime("%Y-%m-%d"):
+            return []
+        try:
+            frame = ak.stock_zh_a_st_em()
+        except Exception as exc:
+            logger.warning("ST limit-up pool supplement skipped: %s", exc)
+            return []
+
+        result = []
+        for row in frame.to_dict(orient="records"):
+            code = str(self._pick(row, "代码", "股票代码", default="")).zfill(6)
+            if not code or code in known_codes:
+                continue
+            change_percent = self._to_float(self._pick(row, "涨跌幅"))
+            if change_percent is None or change_percent < 4.8:
+                continue
+            boards = self._estimate_st_consecutive_boards(code, normalized_date)
+            stock = self._row_to_limit_up_stock({
+                **row,
+                "所属行业": self._pick(row, "所属行业", default="风险警示"),
+                "涨停统计": f"{boards}连" if boards > 1 else "1/1",
+                "连板数": boards,
+                "炸板次数": 0,
+            })
+            stock.tags = list(dict.fromkeys([*stock.tags, "ST补充"]))
+            result.append(stock)
+            known_codes.add(stock.code)
+        return result
+
+    def _estimate_st_consecutive_boards(self, code: str, normalized_date: str) -> int:
+        try:
+            bars = self._fetch_stock_kline_daily(code, normalized_date, 12)
+        except Exception as exc:
+            logger.warning("ST consecutive board estimate skipped for %s: %s", code, exc)
+            return 1
+        if len(bars) < 2:
+            return 1
+        ordered = [item for item in sorted(bars, key=lambda item: item.trade_date) if item.trade_date <= normalized_date]
+        count = 0
+        for index in range(len(ordered) - 1, 0, -1):
+            previous_close = ordered[index - 1].close_price
+            limit_price = round(previous_close * 1.05, 2)
+            if ordered[index].close_price >= limit_price * 0.998:
+                count += 1
+                continue
+            break
+        return max(count, 1)
 
     def sector_strength(
             self,
@@ -222,7 +292,7 @@ class MarketReviewService:
                 candidate_score=round(score, 2),
                 score_breakdown=breakdown,
                 level=level,
-                reasons=reasons or [f"{stock.consecutive_boards}连板入池"],
+                reasons=reasons or [f"{stock.consecutive_boards}板入池"],
                 risks=risks,
             ))
         return sorted(candidates, key=lambda item: item.candidate_score, reverse=True)
@@ -1207,11 +1277,19 @@ class MarketReviewService:
         stat = str(MarketReviewService._pick(row, "涨停统计", default=""))
         match = re.search(r"(\d+)\s*/\s*(\d+)", stat)
         if match:
-            return max(int(match.group(1)), 1)
+            return max(int(match.group(2)), 1)
         match = re.search(r"(\d+)\s*连", stat)
         if match:
             return max(int(match.group(1)), 1)
         return 1
+
+    @staticmethod
+    def _is_limit_price_row(row: Dict[str, Any]) -> bool:
+        latest_price = MarketReviewService._to_float(MarketReviewService._pick(row, "最新价", "收盘价"))
+        limit_price = MarketReviewService._to_float(MarketReviewService._pick(row, "涨停价"))
+        if latest_price is None or limit_price is None or limit_price <= 0:
+            return False
+        return latest_price >= limit_price * 0.999
 
     @staticmethod
     def _json_safe(row: Dict[str, Any]) -> Dict[str, Any]:

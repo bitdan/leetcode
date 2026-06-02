@@ -793,6 +793,104 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual(1, call_count)
         self.assertEqual(stock.board_quality_score, stock.score_breakdown["score"])
 
+    def test_limit_up_pool_supplements_limit_price_rows_from_strong_pool(self):
+        class FakeAkshare:
+            @staticmethod
+            def stock_zt_pool_em(date):
+                return FakeFrame([
+                    {
+                        "代码": "002579",
+                        "名称": "中京电子",
+                        "所属行业": "元件",
+                        "最新价": 20.76,
+                        "涨跌幅": 10.01,
+                        "涨停统计": "6/5",
+                        "连板数": 2,
+                    }
+                ])
+
+            @staticmethod
+            def stock_zt_pool_strong_em(date):
+                return FakeFrame([
+                    {
+                        "代码": "600162",
+                        "名称": "香江控股",
+                        "所属行业": "房地产开发",
+                        "最新价": 3.21,
+                        "涨停价": 3.21,
+                        "涨跌幅": 9.93,
+                        "涨停统计": "7/6",
+                    },
+                    {
+                        "代码": "000001",
+                        "名称": "未涨停强势股",
+                        "所属行业": "银行",
+                        "最新价": 10.1,
+                        "涨停价": 11.0,
+                        "涨停统计": "3/2",
+                    },
+                ])
+
+            @staticmethod
+            def stock_zh_a_st_em():
+                return FakeFrame([])
+
+        service = MarketReviewService()
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare):
+            pool = service.limit_up_pool("2026-06-02", refresh=True)
+
+        stock_map = {item.code: item for item in pool}
+        self.assertIn("600162", stock_map)
+        self.assertNotIn("000001", stock_map)
+        self.assertEqual(6, stock_map["600162"].consecutive_boards)
+        self.assertIn("强势池补充", stock_map["600162"].tags)
+        self.assertEqual(2, stock_map["002579"].consecutive_boards)
+
+    def test_limit_up_pool_supplements_st_limit_up_rows(self):
+        class FakeAkshare:
+            @staticmethod
+            def stock_zt_pool_em(date):
+                return FakeFrame([])
+
+            @staticmethod
+            def stock_zt_pool_strong_em(date):
+                return FakeFrame([])
+
+            @staticmethod
+            def stock_zh_a_st_em():
+                return FakeFrame([
+                    {
+                        "代码": "600265",
+                        "名称": "*ST景谷",
+                        "最新价": 26.95,
+                        "涨跌幅": 5.0,
+                        "成交额": 12_000_000,
+                        "换手率": 2.1,
+                    },
+                    {
+                        "代码": "600001",
+                        "名称": "ST未涨停",
+                        "最新价": 3.01,
+                        "涨跌幅": 3.2,
+                    },
+                ])
+
+        service = MarketReviewService()
+        with patch.object(service, "_load_akshare", return_value=FakeAkshare), \
+                patch.object(service, "_estimate_st_consecutive_boards", return_value=6):
+            pool = service.limit_up_pool("2026-06-02", refresh=True)
+
+        self.assertEqual(1, len(pool))
+        self.assertEqual("600265", pool[0].code)
+        self.assertEqual(6, pool[0].consecutive_boards)
+        self.assertEqual("6连", pool[0].limit_up_stat)
+        self.assertIn("ST补充", pool[0].tags)
+
+    def test_extract_boards_uses_board_count_from_stat_when_direct_missing(self):
+        self.assertEqual(6, MarketReviewService._extract_boards({"涨停统计": "7/6"}))
+        self.assertEqual(6, MarketReviewService._extract_boards({"涨停统计": "6连板"}))
+        self.assertEqual(2, MarketReviewService._extract_boards({"涨停统计": "7/6", "连板数": 2}))
+
     def test_store_row_conversion_preserves_score_breakdown(self):
         sector = SectorStrength(
             industry="算力",

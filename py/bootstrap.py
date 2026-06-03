@@ -80,8 +80,11 @@ def build_container(settings: Settings) -> Container:
         chat_service=create_chat_service(settings),
         post_service=PostService(PostStore(settings.postgres_dsn)),
         market_review_service=MarketReviewService(MarketReviewStore(settings.postgres_dsn)),
-        agent_chat_service=AgentChatService(),
-        agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn)),
+        agent_chat_service=AgentChatService(
+            openai_api_key=settings.openai_api_key,
+            openai_api_base=settings.openai_api_base,
+        ),
+        agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn), model_name="gpt-3.5-turbo"),
         project_agent_service=ProjectAgentService(project_root=Path(__file__).resolve().parents[1]),
         mcp_tool_registry=create_default_tool_registry(),
     )

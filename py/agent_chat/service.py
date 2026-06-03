@@ -86,6 +86,12 @@ class AgentChatService:
         "langgraph": "通用工作流",
     }
 
+    def __init__(self, openai_api_key: str = "", openai_api_base: str = "", model_name: str = "gpt-3.5-turbo"):
+        self.openai_api_key = openai_api_key
+        self.openai_api_base = openai_api_base
+        self.model_name = model_name
+        self._model_client = None
+
     def chat(self, request: AgentChatRequest) -> AgentChatResponse:
         return self._run(request)
 
@@ -316,11 +322,17 @@ class AgentChatService:
         if self._looks_like_agent_architecture_request(lowered):
             return {"route": "agent_architecture", "reason": "Detected agent architecture or tool-calling request.",
                     "confidence": 0.85, "missing_context": []}
+        if self._looks_like_general_question(lowered):
+            return {"route": "langgraph", "reason": "Detected general knowledge or assistant question.",
+                    "confidence": 0.6, "missing_context": []}
         if any(item in lowered for item in ["总结", "文档", "说明", "重构", "refactor", "架构", "设计", "debug", "bug", "失败"]):
             return {"route": "langgraph", "reason": "Detected general planning or writing request.",
                     "confidence": 0.55, "missing_context": []}
-        return {"route": "langgraph", "reason": "No specialized skill matched, using general workflow.",
-                "confidence": 0.35, "missing_context": ["goal"]}
+        if len(lowered.strip()) <= 2:
+            return {"route": "langgraph", "reason": "The request is too short to route confidently.",
+                    "confidence": 0.35, "missing_context": ["goal"]}
+        return {"route": "langgraph", "reason": "No specialized skill matched, using model-backed general workflow.",
+                "confidence": 0.55, "missing_context": []}
 
     def _missing_context(self, route: str, text: str, context: Dict[str, Any]) -> List[str]:
         if route != "nl_to_sql":
@@ -353,6 +365,10 @@ class AgentChatService:
 
     def _looks_like_agent_architecture_request(self, lowered: str) -> bool:
         markers = ["agent", "智能体", "代理", "tool calling", "工具调用", "planner", "executor"]
+        return any(item in lowered for item in markers)
+
+    def _looks_like_general_question(self, lowered: str) -> bool:
+        markers = ["天气", "温度", "下雨", "晴天", "weather", "如何", "怎么样", "怎么", "是什么", "为什么"]
         return any(item in lowered for item in markers)
 
     def _handle_leetcode(self, text: str) -> Dict[str, Any]:
@@ -536,11 +552,14 @@ class AgentChatService:
     def _handle_langgraph(self, text: str) -> Dict[str, Any]:
         topic = text.strip()
         intent = self._classify_general_intent(topic)
-        draft = self._draft_general_answer(topic, intent)
+        model_answer = self._call_model_for_general_answer(topic, intent)
+        draft = model_answer or self._draft_general_answer(topic, intent)
         corrections = self._review_general_answer(draft, intent)
         return {
             "draft": draft,
             "corrections": corrections,
+            "model_used": bool(model_answer),
+            "model_name": self.model_name if model_answer else "template_fallback",
             "trace": [
                 {
                     "node": "classify_intent",
@@ -552,7 +571,7 @@ class AgentChatService:
                 {
                     "node": "draft_answer",
                     "input_summary": intent,
-                    "output_summary": draft[:120],
+                    "output_summary": ("model:" if model_answer else "template:") + draft[:120],
                     "decision": "review",
                     "latency_ms": 0,
                 },
@@ -576,6 +595,8 @@ class AgentChatService:
             return "debugging"
         if any(item in lowered for item in ["总结", "文档", "说明"]):
             return "writing"
+        if any(item in lowered for item in ["天气", "温度", "下雨", "晴天", "weather"]):
+            return "weather"
         return "general_planning"
 
     def _draft_general_answer(self, text: str, intent: str) -> str:
@@ -610,6 +631,11 @@ class AgentChatService:
             )
         if intent == "writing":
             return "建议按背景、目标、关键结论、证据、后续动作组织内容，让读者先看到判断，再看细节。"
+        if intent == "weather":
+            return (
+                "当前 Agent 任务工作台还没有接入实时天气工具，所以不能直接确认广州此刻的天气。"
+                "可以补充天气 API 工具后，让 Router 将天气类问题转到 weather 工具并返回温度、降雨、风力和更新时间。"
+            )
         return f"可以把问题拆成目标、约束、候选方案、验证标准四块处理。原始问题：{text[:120]}"
 
     def _review_general_answer(self, draft: str, intent: str) -> List[str]:
@@ -730,6 +756,45 @@ class AgentChatService:
         if hasattr(model, "dict"):
             return model.dict()
         return dict(model)
+
+    def _call_model_for_general_answer(self, question: str, intent: str) -> str:
+        if not self.openai_api_key:
+            return ""
+        try:
+            client = self._get_model_client()
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是 Tool Hub 的 Agent 任务工作台助手。"
+                            "请用中文直接回答用户问题，保持准确、简洁、可执行。"
+                            "如果问题需要实时数据而当前上下文没有工具结果，请明确说明没有实时数据来源，"
+                            "不要编造当前天气、价格、新闻或时间敏感结论。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"意图：{intent}\n问题：{question}",
+                    },
+                ],
+                temperature=0.2,
+                max_tokens=700,
+            )
+            return (response.choices[0].message.content or "").strip()
+        except Exception:
+            return ""
+
+    def _get_model_client(self):
+        if self._model_client is None:
+            from openai import OpenAI
+
+            kwargs = {"api_key": self.openai_api_key}
+            if self.openai_api_base:
+                kwargs["base_url"] = self.openai_api_base
+            self._model_client = OpenAI(**kwargs)
+        return self._model_client
 
     def _numbered(self, values: List[Any]) -> str:
         if not values:

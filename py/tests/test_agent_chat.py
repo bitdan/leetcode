@@ -69,6 +69,32 @@ class AgentChatServiceTest(unittest.TestCase):
         self.assertEqual("route_decided", result.steps[0].node)
         self.assertEqual("agent_architecture_planner", result.tool_calls[0].tool_name)
 
+    def test_weather_question_uses_general_answer_not_missing_context(self):
+        service = AgentChatService()
+        result = service.chat(AgentChatRequest(message="广州天气如何"))
+
+        self.assertEqual("langgraph", result.route)
+        self.assertEqual("success", result.status)
+        self.assertNotIn("我还不能稳定判断", result.answer)
+        self.assertIn("实时天气工具", result.answer)
+
+    def test_general_question_does_not_require_task_type(self):
+        service = AgentChatService()
+        result = service.chat(AgentChatRequest(message="广州在哪里"))
+
+        self.assertEqual("langgraph", result.route)
+        self.assertEqual("success", result.status)
+        self.assertNotIn("我还不能稳定判断", result.answer)
+
+    def test_general_question_can_use_model_answer(self):
+        service = AgentChatService(openai_api_key="test-key")
+        with patch.object(service, "_call_model_for_general_answer", return_value="广州在中国广东省，是广东省省会。"):
+            result = service.chat(AgentChatRequest(message="广州在哪里"))
+
+        self.assertEqual("langgraph", result.route)
+        self.assertIn("广东省", result.answer)
+        self.assertTrue(result.structured_content["model_used"])
+
 
 class AgentChatApiTest(unittest.TestCase):
     def setUp(self):

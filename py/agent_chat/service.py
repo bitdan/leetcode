@@ -1,3 +1,4 @@
+import json
 import re
 import time
 import uuid
@@ -305,6 +306,9 @@ class AgentChatService:
                 "confidence": max(0.75, decision["confidence"]),
                 "missing_context": self._missing_context(forced_route, text, request.context if request else {}),
             }
+        model_decision = self._route_with_model(text, request.context if request else {})
+        if model_decision:
+            return model_decision
         return self._route_by_text(text, request.context if request else {})
 
     def _route_by_text(self, text: str, context: Optional[Dict[str, Any]] = None) -> RouteDecision:
@@ -553,7 +557,7 @@ class AgentChatService:
         topic = text.strip()
         intent = self._classify_general_intent(topic)
         model_answer = self._call_model_for_general_answer(topic, intent)
-        draft = model_answer or self._draft_general_answer(topic, intent)
+        draft = model_answer or "模型服务未配置或调用失败，当前无法生成开放域回答。"
         corrections = self._review_general_answer(draft, intent)
         return {
             "draft": draft,
@@ -785,6 +789,65 @@ class AgentChatService:
             return (response.choices[0].message.content or "").strip()
         except Exception:
             return ""
+
+    def _route_with_model(self, text: str, context: Dict[str, Any]) -> Optional[RouteDecision]:
+        if not self.openai_api_key:
+            return None
+        try:
+            client = self._get_model_client()
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是 Agent skill 路由器。判断用户请求是否需要调用本地 skill。"
+                            "可选 route: leetcode_coach, java_stacktrace, nl_to_sql, agent_architecture, langgraph。"
+                            "只有算法题辅导、Java异常堆栈、自然语言转SQL、Agent架构设计明确需要本地 skill；"
+                            "普通知识问答、地点、概念解释、闲聊、写作和不需要工具的问题使用 langgraph。"
+                            "SQL 缺少表结构时 missing_context 必须包含 schema。"
+                            "只输出 JSON，不要输出解释文字。格式："
+                            "{\"route\":\"langgraph\",\"confidence\":0.8,\"missing_context\":[],\"reason\":\"...\"}"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps({"message": text, "context": context}, ensure_ascii=False),
+                    },
+                ],
+                temperature=0,
+                max_tokens=220,
+            )
+            payload = self._parse_json_object(response.choices[0].message.content or "")
+            route = str(payload.get("route") or "langgraph")
+            if route not in self.ROUTE_TITLES:
+                route = "langgraph"
+            missing_context = payload.get("missing_context") or []
+            if not isinstance(missing_context, list):
+                missing_context = []
+            for item in self._missing_context(route, text, context):
+                if item not in missing_context:
+                    missing_context.append(item)
+            return {
+                "route": route,  # type: ignore[typeddict-item]
+                "reason": str(payload.get("reason") or "Model selected route."),
+                "confidence": float(payload.get("confidence") or 0.7),
+                "missing_context": [str(item) for item in missing_context],
+            }
+        except Exception:
+            return None
+
+    def _parse_json_object(self, text: str) -> Dict[str, Any]:
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r"\{[\s\S]*\}", text)
+            if not match:
+                return {}
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return {}
 
     def _get_model_client(self):
         if self._model_client is None:

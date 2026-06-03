@@ -76,7 +76,7 @@ class AgentChatServiceTest(unittest.TestCase):
         self.assertEqual("langgraph", result.route)
         self.assertEqual("success", result.status)
         self.assertNotIn("我还不能稳定判断", result.answer)
-        self.assertIn("实时天气工具", result.answer)
+        self.assertIn("模型服务", result.answer)
 
     def test_general_question_does_not_require_task_type(self):
         service = AgentChatService()
@@ -85,15 +85,39 @@ class AgentChatServiceTest(unittest.TestCase):
         self.assertEqual("langgraph", result.route)
         self.assertEqual("success", result.status)
         self.assertNotIn("我还不能稳定判断", result.answer)
+        self.assertIn("模型服务", result.answer)
 
     def test_general_question_can_use_model_answer(self):
         service = AgentChatService(openai_api_key="test-key")
-        with patch.object(service, "_call_model_for_general_answer", return_value="广州在中国广东省，是广东省省会。"):
+        with patch.object(
+                service,
+                "_route_with_model",
+                return_value={"route": "langgraph", "reason": "general", "confidence": 0.8, "missing_context": []},
+        ), patch.object(service, "_call_model_for_general_answer", return_value="广州在中国广东省，是广东省省会。"):
             result = service.chat(AgentChatRequest(message="广州在哪里"))
 
         self.assertEqual("langgraph", result.route)
         self.assertIn("广东省", result.answer)
         self.assertTrue(result.structured_content["model_used"])
+
+    def test_model_router_can_select_local_skill(self):
+        service = AgentChatService(openai_api_key="test-key")
+        with patch.object(
+                service,
+                "_route_with_model",
+                return_value={
+                    "route": "java_stacktrace",
+                    "reason": "Model selected Java stacktrace skill.",
+                    "confidence": 0.9,
+                    "missing_context": [],
+                },
+        ), patch.object(service, "_handle_stacktrace",
+                        return_value={"root_cause": "NPE", "evidence": [], "likely_fixes": [],
+                                      "missing_context": []}):
+            result = service.chat(AgentChatRequest(message="帮我分析这个异常"))
+
+        self.assertEqual("java_stacktrace", result.route)
+        self.assertEqual("java_stacktrace_analyzer", result.tool_calls[0].tool_name)
 
 
 class AgentChatApiTest(unittest.TestCase):
@@ -116,7 +140,11 @@ class AgentChatApiTest(unittest.TestCase):
         self.assertEqual("leetcode_coach", response.json()["route"])
 
     def test_chat_stream_endpoint_emits_final_response(self):
-        with self.client.stream("POST", "/api/v1/agent/chat/stream", json={"message": "如何实现agent"}) as response:
+        with self.client.stream(
+                "POST",
+                "/api/v1/agent/chat/stream",
+                json={"message": "如何实现agent", "route": "agent_architecture"},
+        ) as response:
             body = response.read().decode("utf-8")
         self.assertEqual(200, response.status_code)
         self.assertIn("event: route_decided", body)

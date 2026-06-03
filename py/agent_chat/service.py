@@ -74,9 +74,19 @@ class AgentChatService:
         return sum(1 for item in markers if item in lowered) >= 2
 
     def _handle_leetcode(self, text: str) -> Dict[str, Any]:
-        from skill_adapters.leetcode_coach import run_leetcode_coach
+        from mcp_server.leetcode_coach import run_leetcode_coach
 
-        return run_leetcode_coach(self._extract_leetcode_payload(text))
+        payload = self._extract_leetcode_payload(text)
+        return run_leetcode_coach(
+            title=payload["title"],
+            problem_statement=payload["problem_statement"],
+            constraints=payload["constraints"],
+            examples=payload["examples"],
+            code=payload["code"],
+            language=payload["language"],
+            user_question=payload["user_question"],
+            mode=payload["mode"],
+        )
 
     def _extract_leetcode_payload(self, text: str) -> Dict[str, Any]:
         code = self._extract_code_block(text)
@@ -181,22 +191,99 @@ class AgentChatService:
         return "\n\n".join(parts)
 
     def _handle_langgraph(self, text: str) -> Dict[str, Any]:
-        from workflow_adapter.langgraph_workflow import execute_langgraph_workflow
+        topic = text.strip()
+        intent = self._classify_general_intent(topic)
+        draft = self._draft_general_answer(topic, intent)
+        corrections = self._review_general_answer(draft, intent)
+        return {
+            "draft": draft,
+            "corrections": corrections,
+            "trace": [
+                {
+                    "node": "classify_intent",
+                    "input_summary": topic[:80],
+                    "output_summary": intent,
+                    "decision": "continue",
+                    "latency_ms": 0,
+                },
+                {
+                    "node": "draft_answer",
+                    "input_summary": intent,
+                    "output_summary": draft[:120],
+                    "decision": "review",
+                    "latency_ms": 0,
+                },
+                {
+                    "node": "review_answer",
+                    "input_summary": draft[:120],
+                    "output_summary": f"{len(corrections)} corrections",
+                    "decision": "final",
+                    "latency_ms": 0,
+                },
+            ],
+        }
 
-        return execute_langgraph_workflow(text)
+    def _classify_general_intent(self, text: str) -> str:
+        lowered = text.lower()
+        if any(item in lowered for item in ["agent", "智能体", "代理", "tool calling", "工具调用"]):
+            return "agent_architecture"
+        if any(item in lowered for item in ["重构", "refactor", "架构", "设计"]):
+            return "engineering_design"
+        if any(item in lowered for item in ["排查", "debug", "bug", "失败"]):
+            return "debugging"
+        if any(item in lowered for item in ["总结", "文档", "说明"]):
+            return "writing"
+        return "general_planning"
+
+    def _draft_general_answer(self, text: str, intent: str) -> str:
+        if intent == "agent_architecture":
+            return "\n".join(
+                [
+                    "实现 Agent 不要从“聊天接口”开始，而是先定义一个可执行的任务循环。",
+                    "",
+                    "推荐最小架构：",
+                    "1. Intent Router：判断用户是在问答、查代码、改代码、跑命令还是生成报告。",
+                    "2. Planner：把目标拆成 3 到 6 个可验证步骤，例如检索上下文、读取文件、生成方案、执行工具、验证结果。",
+                    "3. Tool Registry：把能力做成明确工具，例如 search_code、read_file、apply_patch、run_test、query_db。",
+                    "4. Executor：按计划调用工具，每一步记录输入、输出、耗时和错误。",
+                    "5. Memory：保存会话上下文、项目索引、用户偏好和已确认的操作结果。",
+                    "6. Guardrail：危险操作必须确认，写文件和运行命令要有白名单、路径限制和超时。",
+                    "7. Evaluator：检查回答是否引用证据、是否完成目标、测试是否通过，失败时回到 Planner 修正。",
+                    "",
+                    "一个实用执行流可以是：用户请求 -> 路由 -> 制定计划 -> 检索/读文件 -> 生成补丁或答案 -> 运行验证 -> 输出总结。",
+                    "",
+                    "在这个项目里，下一步应该把 `agent_runtime` 继续升级：让 Planner 产出结构化步骤，Tool Registry 支持写补丁和跑测试，再把 trace 展示给前端而不是混进回答正文。",
+                ]
+            )
+        if intent == "engineering_design":
+            return (
+                "建议先收敛目标和边界，再按模块拆分现状、目标结构、迁移步骤和验证方式。"
+                "重构不要只移动文件，应该减少重复职责，并保留兼容层直到调用方迁移完成。"
+            )
+        if intent == "debugging":
+            return (
+                "建议先定位稳定复现路径，再收集错误栈、最近变更、输入数据和环境差异。"
+                "优先验证最深层根因，不要停在包装异常或接口层症状。"
+            )
+        if intent == "writing":
+            return "建议按背景、目标、关键结论、证据、后续动作组织内容，让读者先看到判断，再看细节。"
+        return f"可以把问题拆成目标、约束、候选方案、验证标准四块处理。原始问题：{text[:120]}"
+
+    def _review_general_answer(self, draft: str, intent: str) -> List[str]:
+        corrections = []
+        if not draft.strip():
+            corrections.append("补充明确结论，避免返回空内容。")
+        if len(draft.strip()) < 40:
+            corrections.append("补充执行步骤或判断依据，让建议更可操作。")
+        if intent in {"agent_architecture", "engineering_design", "debugging"} and "验证" not in draft:
+            corrections.append("补充验证方式，确保方案可以被确认。")
+        return corrections
 
     def _format_langgraph_answer(self, data: Dict[str, Any]) -> str:
         parts = [f"结果\n{data.get('draft', '')}"]
         corrections = data.get("corrections") or []
         if corrections:
             parts.append("改进建议\n" + self._numbered(corrections))
-        trace = data.get("trace") or []
-        if trace:
-            trace_lines = [
-                f"{index + 1}. {item.get('node')} | {item.get('input_summary')} -> {item.get('output_summary')} | decision={item.get('decision')} | {item.get('latency_ms')}ms"
-                for index, item in enumerate(trace)
-            ]
-            parts.append("执行轨迹\n" + "\n".join(trace_lines))
         return "\n\n".join(parts)
 
     def _numbered(self, values: List[Any]) -> str:

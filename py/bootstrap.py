@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 from agent_chat.service import AgentChatService
 from agent_eval.service import AgentEvalService
@@ -18,7 +17,6 @@ from market_review.store import MarketReviewStore
 from mcp_server.registry import create_default_tool_registry
 from post.service import PostService
 from post.store import PostStore
-from project_agent.service import ProjectAgentService
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,6 @@ class Container:
     market_review_service: MarketReviewService
     agent_chat_service: AgentChatService
     agent_eval_service: AgentEvalService
-    project_agent_service: ProjectAgentService
     mcp_tool_registry: dict
 
 
@@ -85,7 +82,6 @@ def build_container(settings: Settings) -> Container:
             openai_api_base=settings.openai_api_base,
         ),
         agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn), model_name="gpt-3.5-turbo"),
-        project_agent_service=ProjectAgentService(project_root=Path(__file__).resolve().parents[1]),
         mcp_tool_registry=create_default_tool_registry(),
     )
 

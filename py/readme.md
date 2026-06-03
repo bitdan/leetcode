@@ -7,10 +7,10 @@
 - `core/`: 核心配置与日志。
 - `api/main.py`: FastAPI 入口，基于 `app.create_app()` 构建应用。
 - `start.py`: 本地启动脚本。
-- `auth/`、`game/`、`mcp_server/`、`agent_chat/`、`agent_runtime/`、`project_agent/`:
+- `auth/`、`game/`、`mcp_server/`、`agent_chat/`、`agent_eval/`:
   真实实现目录。
-- `agent_runtime/`: 统一的项目 Agent runtime，负责计划、检索、读文件、命令确认、流式事件和 trace。
-- `project_agent/`: 面向旧 `/api/v1/project-agent/*` API 的兼容适配层。
+- `agent_chat/`: Agent 任务工作台的聊天、模型路由、本地 skill 调用和流式事件。
+- `agent_eval/`: Agent run、tool call、反馈和评测指标记录。
 - `tests/`: 可回归单测。
 
 ## 设计原则

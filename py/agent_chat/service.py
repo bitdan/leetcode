@@ -517,7 +517,7 @@ class AgentChatService:
             "components": components,
             "flow": flow,
             "implementation_hint": (
-                "这个项目已经有 agent_runtime，可以继续把 Planner、Tool Registry、Executor、Evaluator 做成独立类；"
+                "当前 Agent 工作台可以继续把 Planner、Tool Registry、Executor、Evaluator 做成独立类；"
                 "前端只展示 answer，把 trace、tool_calls、citations 放到调试面板。"
             ),
             "trace": [
@@ -620,7 +620,7 @@ class AgentChatService:
                     "",
                     "一个实用执行流可以是：用户请求 -> 路由 -> 制定计划 -> 检索/读文件 -> 生成补丁或答案 -> 运行验证 -> 输出总结。",
                     "",
-                    "在这个项目里，下一步应该把 `agent_runtime` 继续升级：让 Planner 产出结构化步骤，Tool Registry 支持写补丁和跑测试，再把 trace 展示给前端而不是混进回答正文。",
+                    "在这个项目里，下一步应该把 Agent 执行链路继续收敛：让 Planner 产出结构化步骤，Tool Registry 支持写补丁和跑测试，再把 trace 展示给前端而不是混进回答正文。",
                 ]
             )
         if intent == "engineering_design":

@@ -166,6 +166,26 @@ The `py/` app is a FastAPI backend assembled in `py/app.py` through a dependency
 - For backend verification, at minimum run `python -m py_compile` on changed Python modules. If dependencies and
   services are available, also instantiate the app with `python -c "from app import create_app; create_app()"`.
 
+## Agent Backend Directory Rules
+
+Keep Agent backend responsibilities concentrated and avoid recreating deleted compatibility layers.
+
+- `py/agent_chat/` is the single entry point for the Agent workbench chat experience. It owns `/api/v1/agent/chat`,
+  `/api/v1/agent/chat/stream`, intent routing, model fallback, skill dispatch, trace creation, tool call summaries,
+  and response shaping.
+- `py/agent_eval/` owns Agent run persistence, trace/query APIs, feedback, eval cases, retry/cancel metadata, and
+  aggregate metrics. Do not move evaluation or run-history storage into `agent_chat`.
+- `py/skills/` contains local skill instructions and should stay workflow-focused. Add or update a skill when a task has
+  a reusable specialized process, but keep runtime orchestration in `agent_chat`.
+- Do not recreate `py/agent_runtime/`, `py/project_agent/`, or `py/langchain_examples/`. Those older directories were
+  removed to avoid parallel Agent implementations and stale compatibility APIs.
+- New Agent tools should be small, explicit functions or classes reachable from `agent_chat` through a registry-like
+  boundary. Keep tool metadata normalized with `step_id`, `node`, `status`, `input_summary`, `output_summary`,
+  `latency_ms`, `error`, and `tool_name` so the frontend and eval service can consume one trace shape.
+- Keep public Agent APIs under `/api/v1/agent/*`. Do not add new `/api/v1/project-agent/*` endpoints.
+- For frontend Agent workbench changes, keep the UI chat-first and wire it to the real streaming endpoint instead of
+  adding template buttons or fake typing flows.
+
 ## Database Guidelines
 
 PostgreSQL is the preferred persistent store for new Tool Hub business features that need durable relational data.

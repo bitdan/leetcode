@@ -19,7 +19,7 @@ class AgentChatResponse(BaseModel):
 
 
 class RouteDecision(TypedDict):
-    route: Literal["leetcode_coach", "java_stacktrace", "nl_to_sql", "langgraph"]
+    route: Literal["leetcode_coach", "java_stacktrace", "nl_to_sql", "agent_architecture", "langgraph"]
     reason: str
 
 
@@ -41,6 +41,10 @@ class AgentChatService:
             structured = self._handle_nl_to_sql(text)
             answer = self._format_nl_to_sql_answer(structured)
             title = "NL To SQL"
+        elif decision["route"] == "agent_architecture":
+            structured = self._handle_agent_architecture(text)
+            answer = self._format_agent_architecture_answer(structured)
+            title = "Agent 架构顾问"
         else:
             structured = self._handle_langgraph(text)
             answer = self._format_langgraph_answer(structured)
@@ -57,6 +61,8 @@ class AgentChatService:
                     "reason": "Detected LeetCode/problem-solving request with coding context."}
         if self._looks_like_sql_request(lowered):
             return {"route": "nl_to_sql", "reason": "Detected analytics-to-SQL style request."}
+        if self._looks_like_agent_architecture_request(lowered):
+            return {"route": "agent_architecture", "reason": "Detected agent architecture or tool-calling request."}
         return {"route": "langgraph", "reason": "No specialized skill matched, using general workflow."}
 
     def _looks_like_java_stacktrace(self, text: str) -> bool:
@@ -72,6 +78,10 @@ class AgentChatService:
     def _looks_like_sql_request(self, lowered: str) -> bool:
         markers = ["sql", "销量最高", "近30天", "近7天", "sku", "account", "站点", "下单量", "订单"]
         return sum(1 for item in markers if item in lowered) >= 2
+
+    def _looks_like_agent_architecture_request(self, lowered: str) -> bool:
+        markers = ["agent", "智能体", "代理", "tool calling", "工具调用", "planner", "executor"]
+        return any(item in lowered for item in markers)
 
     def _handle_leetcode(self, text: str) -> Dict[str, Any]:
         from mcp_server.leetcode_coach import run_leetcode_coach
@@ -189,6 +199,67 @@ class AgentChatService:
         if data.get("tables"):
             parts.append("涉及表\n" + self._numbered(data["tables"]))
         return "\n\n".join(parts)
+
+    def _handle_agent_architecture(self, text: str) -> Dict[str, Any]:
+        goal = text.strip()
+        components = [
+            {"name": "Intent Router", "purpose": "识别用户是在问答、查代码、改代码、跑命令、查数据库还是生成报告。"},
+            {"name": "Planner", "purpose": "把目标拆成少量可验证步骤，并决定每一步需要哪些工具和证据。"},
+            {"name": "Tool Registry", "purpose": "用统一 schema 暴露 search_code、read_file、apply_patch、run_test、query_db 等工具。"},
+            {"name": "Executor", "purpose": "按计划调用工具，记录输入、输出、错误、耗时和重试。"},
+            {"name": "Memory", "purpose": "保存会话上下文、项目索引、用户偏好、已确认操作和历史结论。"},
+            {"name": "Guardrail", "purpose": "限制危险命令、跨目录写入、未确认修改和长时间任务。"},
+            {"name": "Evaluator", "purpose": "检查是否完成目标、是否引用证据、验证是否通过，失败时回到 Planner 修正。"},
+        ]
+        flow = [
+            "接收用户目标并生成 intent",
+            "检索项目或业务上下文",
+            "生成结构化 plan",
+            "逐步调用工具并记录 trace",
+            "根据工具结果产出回答、补丁或报告",
+            "运行验证并给出风险与下一步",
+        ]
+        return {
+            "goal": goal,
+            "summary": "实现 Agent 的核心不是聊天，而是一个带工具、状态、验证和安全边界的任务执行循环。",
+            "components": components,
+            "flow": flow,
+            "implementation_hint": (
+                "这个项目已经有 agent_runtime，可以继续把 Planner、Tool Registry、Executor、Evaluator 做成独立类；"
+                "前端只展示 answer，把 trace、tool_calls、citations 放到调试面板。"
+            ),
+            "trace": [
+                {
+                    "node": "detect_agent_architecture",
+                    "input_summary": goal[:80],
+                    "output_summary": "agent_architecture",
+                    "decision": "specialized_route",
+                    "latency_ms": 0,
+                },
+                {
+                    "node": "compose_agent_blueprint",
+                    "input_summary": "components+flow",
+                    "output_summary": "7 components, 6 flow steps",
+                    "decision": "final",
+                    "latency_ms": 0,
+                },
+            ],
+        }
+
+    def _format_agent_architecture_answer(self, data: Dict[str, Any]) -> str:
+        component_lines = [
+            f"{index + 1}. {item['name']}：{item['purpose']}"
+            for index, item in enumerate(data.get("components") or [])
+        ]
+        flow_lines = [f"{index + 1}. {item}" for index, item in enumerate(data.get("flow") or [])]
+        return "\n\n".join(
+            [
+                data.get("summary", ""),
+                "最小架构：\n" + "\n".join(component_lines),
+                "执行流：\n" + "\n".join(flow_lines),
+                "落地建议：\n" + data.get("implementation_hint", ""),
+            ]
+        )
 
     def _handle_langgraph(self, text: str) -> Dict[str, Any]:
         topic = text.strip()

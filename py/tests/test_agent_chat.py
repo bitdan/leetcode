@@ -47,7 +47,7 @@ class AgentChatServiceTest(unittest.TestCase):
 
     def test_default_langgraph_workflow_runs_without_patch(self):
         service = AgentChatService()
-        result = service.chat(AgentChatRequest(message="帮我重构这个后端 agent 架构"))
+        result = service.chat(AgentChatRequest(message="帮我写一段关于数据太多怎么办的总结"))
 
         self.assertEqual("langgraph", result.route)
         self.assertIn("trace", result.structured_content)
@@ -57,10 +57,12 @@ class AgentChatServiceTest(unittest.TestCase):
         service = AgentChatService()
         result = service.chat(AgentChatRequest(message="如何实现agent"))
 
-        self.assertEqual("langgraph", result.route)
+        self.assertEqual("agent_architecture", result.route)
+        self.assertEqual("Agent 架构顾问", result.title)
         self.assertIn("Planner", result.answer)
         self.assertIn("Tool Registry", result.answer)
         self.assertIn("Evaluator", result.answer)
+        self.assertNotIn("结果\n", result.answer)
         self.assertEqual("agent_architecture", result.structured_content["trace"][0]["output_summary"])
 
 

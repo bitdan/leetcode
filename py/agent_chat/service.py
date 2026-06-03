@@ -4,7 +4,12 @@ import time
 import uuid
 from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict
 
+from agent_chat.confirmation import ConfirmationRequired, InMemoryConfirmationStore
+from agent_chat.skill_registry import SkillRegistry
+from agent_chat.tool_executor import ToolExecution, ToolExecutor
+from agent_chat.tool_registry import ToolRegistry, ToolSpec, register_workspace_tools
 from mcp_server.java_stacktrace import analyze_java_stacktrace
+from mcp_server.sql_exporter import run_sql_export
 from mcp_server.sql_generator import generate_nl_sql
 from pydantic import BaseModel, Field
 
@@ -87,14 +92,84 @@ class AgentChatService:
         "langgraph": "通用工作流",
     }
 
-    def __init__(self, openai_api_key: str = "", openai_api_base: str = "", model_name: str = "gpt-3.5-turbo"):
+    def __init__(
+            self,
+            openai_api_key: str = "",
+            openai_api_base: str = "",
+            model_name: str = "gpt-3.5-turbo",
+            tool_registry: Optional[ToolRegistry] = None,
+            confirmation_store: Optional[InMemoryConfirmationStore] = None,
+            skill_registry: Optional[SkillRegistry] = None,
+    ):
         self.openai_api_key = openai_api_key
         self.openai_api_base = openai_api_base
         self.model_name = model_name
         self._model_client = None
+        self.skill_registry = skill_registry or SkillRegistry()
+        self.tool_registry = tool_registry or ToolRegistry()
+        self.confirmations = confirmation_store or InMemoryConfirmationStore()
+        self._register_default_tools()
+        self.tool_executor = ToolExecutor(self.tool_registry, self.confirmations)
 
     def chat(self, request: AgentChatRequest) -> AgentChatResponse:
         return self._run(request)
+
+    def list_tools(self) -> List[Dict[str, Any]]:
+        return self.tool_registry.list()
+
+    def list_skills(self) -> List[Dict[str, Any]]:
+        return self.skill_registry.list()
+
+    def list_confirmations(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        return [self.confirmations.dump(item) for item in self.confirmations.list_pending(session_id)]
+
+    def get_confirmation(self, confirmation_id: str) -> Dict[str, Any]:
+        return self.confirmations.dump(self.confirmations.get(confirmation_id))
+
+    def reject_confirmation(self, confirmation_id: str) -> Dict[str, Any]:
+        return self.confirmations.dump(self.confirmations.reject(confirmation_id))
+
+    def approve_confirmation(self, confirmation_id: str) -> Dict[str, Any]:
+        confirmation = self.confirmations.approve(confirmation_id)
+        execution = self.tool_executor.execute(
+            confirmation.tool_name,
+            confirmation.arguments,
+            run_id=confirmation.run_id,
+            session_id=confirmation.session_id,
+            confirmed=True,
+        )
+        result = self._dump_execution(execution)
+        self.confirmations.complete(confirmation_id, result)
+        return {
+            "confirmation": self.confirmations.dump(self.confirmations.get(confirmation_id)),
+            "execution": result,
+        }
+
+    def invoke_tool(
+            self,
+            tool_name: str,
+            arguments: Dict[str, Any],
+            *,
+            run_id: Optional[str] = None,
+            session_id: Optional[str] = None,
+            confirmed: bool = False,
+    ) -> Dict[str, Any]:
+        run_id = run_id or f"run_{uuid.uuid4().hex}"
+        session_id = session_id or f"session_{uuid.uuid4().hex}"
+        try:
+            execution = self.tool_executor.execute(
+                tool_name,
+                arguments,
+                run_id=run_id,
+                session_id=session_id,
+                confirmed=confirmed,
+            )
+            return {"status": execution.status, "execution": self._dump_execution(execution)}
+        except ConfirmationRequired as exc:
+            return {
+                "status": "awaiting_confirmation",
+                "confirmation": self.confirmations.dump(exc.confirmation),
+            }
 
     def stream(self, request: AgentChatRequest) -> Iterable[Dict[str, Any]]:
         state = self._new_state(request)
@@ -213,21 +288,67 @@ class AgentChatService:
                 metrics=AgentChatMetrics(latency_ms=self._elapsed_ms(started), steps_count=len(steps)),
             )
 
-        tool_started = time.perf_counter()
-        tool_name = self._tool_name(decision["route"])
         try:
-            structured, answer = self._dispatch_route(decision["route"], text)
-            status = "success"
-            error = None
+            structured, answer, execution = self._dispatch_route(decision["route"], text, state)
+            status = execution.status
+            error = execution.error
+            tool_name = execution.tool_name
+            tool_latency = execution.latency_ms
+            input_payload = execution.arguments
+        except ConfirmationRequired as exc:
+            confirmation_payload = self.confirmations.dump(exc.confirmation)
+            answer = "这个操作需要确认后才能继续执行。请确认工具、参数和风险等级后再继续。"
+            tool_call = AgentChatToolCall(
+                tool_name=exc.confirmation.tool_name,
+                input_payload=exc.confirmation.arguments,
+                output_summary=exc.confirmation.input_summary,
+                status="awaiting_confirmation",
+                latency_ms=0,
+                error=None,
+            )
+            steps.append(
+                AgentChatStep(
+                    step_id=self._step_id(),
+                    node="confirmation_required",
+                    status="awaiting_confirmation",
+                    input_summary=exc.confirmation.tool_name,
+                    output_summary=exc.confirmation.id,
+                    latency_ms=0,
+                    tool_name=exc.confirmation.tool_name,
+                )
+            )
+            structured = self._structured(
+                state,
+                decision,
+                plan,
+                steps,
+                [tool_call],
+                {"confirmation": confirmation_payload, "selected_tool": exc.confirmation.tool_name},
+            )
+            return AgentChatResponse(
+                route=decision["route"],
+                title=self.ROUTE_TITLES[decision["route"]],
+                answer=answer,
+                structured_content=structured,
+                run_id=state["run_id"],
+                trace_id=state["trace_id"],
+                session_id=state["session_id"],
+                status="awaiting_confirmation",
+                steps=steps,
+                tool_calls=[tool_call],
+                metrics=AgentChatMetrics(latency_ms=self._elapsed_ms(started), steps_count=len(steps)),
+            )
         except Exception as exc:
             structured = {"error": str(exc)}
             answer = "任务处理失败，请补充上下文后重试。"
             status = "failed"
             error = str(exc)
-        tool_latency = self._elapsed_ms(tool_started)
+            tool_name = self._tool_name(decision["route"])
+            tool_latency = 0
+            input_payload = {"message": text[:1000], "route": decision["route"]}
         tool_call = AgentChatToolCall(
             tool_name=tool_name,
-            input_payload={"message": text[:1000], "route": decision["route"]},
+            input_payload=input_payload,
             output_summary=self._output_summary(structured, answer),
             status=status,
             latency_ms=tool_latency,
@@ -273,22 +394,137 @@ class AgentChatService:
             metrics=AgentChatMetrics(latency_ms=self._elapsed_ms(started), steps_count=len(steps)),
         )
 
-    def _dispatch_route(self, route: str, text: str) -> tuple[Dict[str, Any], str]:
+    def _dispatch_route(self, route: str, text: str, state: Dict[str, str]) -> tuple[Dict[str, Any], str, ToolExecution]:
+        tool_name = self._tool_name(route)
+        arguments = self._tool_arguments_for_route(route, text)
+        execution = self.tool_executor.execute(
+            tool_name,
+            arguments,
+            run_id=state["run_id"],
+            session_id=state["session_id"],
+        )
+        structured = dict(execution.output or {})
         if route == "leetcode_coach":
-            structured = self._handle_leetcode(text)
-            return structured, self._format_leetcode_answer(structured)
+            return structured, self._format_leetcode_answer(structured), execution
         if route == "java_stacktrace":
-            structured = self._handle_stacktrace(text)
             structured["deepest_cause"] = self._deepest_caused_by(text)
-            return structured, self._format_stacktrace_answer(structured)
+            return structured, self._format_stacktrace_answer(structured), execution
         if route == "nl_to_sql":
-            structured = self._handle_nl_to_sql(text)
-            return structured, self._format_nl_to_sql_answer(structured)
+            return structured, self._format_nl_to_sql_answer(structured), execution
         if route == "agent_architecture":
-            structured = self._handle_agent_architecture(text)
-            return structured, self._format_agent_architecture_answer(structured)
-        structured = self._handle_langgraph(text)
-        return structured, self._format_langgraph_answer(structured)
+            return structured, self._format_agent_architecture_answer(structured), execution
+        return structured, self._format_langgraph_answer(structured), execution
+
+    def _register_default_tools(self) -> None:
+        self.tool_registry.register(
+            ToolSpec(
+                name="leetcode_coach",
+                description="Run the local LeetCode coach skill.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._handle_leetcode(str(args.get("message") or "")),
+                skill_name="leetcode-coach",
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name="java_stacktrace_analyzer",
+                description="Run the local Java stacktrace analyzer skill.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._handle_stacktrace(str(args.get("message") or "")),
+                skill_name="java-stacktrace-analyzer",
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name="nl_to_sql_generator",
+                description="Run the local natural-language to SQL generator skill.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._handle_nl_to_sql(str(args.get("message") or "")),
+                skill_name="nl-to-sql-generator",
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name="agent_architecture_planner",
+                description="Draft an Agent architecture and execution loop plan.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._handle_agent_architecture(str(args.get("message") or "")),
+                skill_name="langgraph-workflow",
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name="general_model_chat",
+                description="Answer a general user question with the configured model.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: self._handle_langgraph(str(args.get("message") or "")),
+            )
+        )
+        self.tool_registry.register(
+            ToolSpec(
+                name="sql_exporter",
+                description="Validate, execute, and export a read-only SQL query. Requires confirmation.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "db_kind": {"type": "string"},
+                        "db_path": {"type": "string", "default": ""},
+                        "dsn": {"type": "string", "default": ""},
+                        "sql": {"type": "string", "default": ""},
+                        "sql_file": {"type": "string", "default": ""},
+                        "params": {"type": "object", "default": {}},
+                        "export": {"type": "string"},
+                        "output": {"type": "string"},
+                        "max_rows": {"type": "integer", "default": 5000},
+                    },
+                    "required": ["db_kind", "export", "output"],
+                    "additionalProperties": False,
+                },
+                handler=lambda args: run_sql_export(
+                    db_kind=str(args.get("db_kind") or ""),
+                    db_path=str(args.get("db_path") or ""),
+                    dsn=str(args.get("dsn") or ""),
+                    sql=str(args.get("sql") or ""),
+                    sql_file=str(args.get("sql_file") or ""),
+                    params=args.get("params") if isinstance(args.get("params"), dict) else {},
+                    export=str(args.get("export") or ""),
+                    output=str(args.get("output") or ""),
+                    max_rows=int(args.get("max_rows") or 5000),
+                ),
+                risk_level="external",
+                requires_confirmation=True,
+                skill_name="sql-exporter",
+            )
+        )
+        register_workspace_tools(self.tool_registry)
+
+    def _tool_arguments_for_route(self, route: str, text: str) -> Dict[str, Any]:
+        return {"message": text}
 
     def _normalize_message(self, message: str) -> str:
         text = message.strip()
@@ -670,13 +906,16 @@ class AgentChatService:
         return f"step_{uuid.uuid4().hex}"
 
     def _tool_name(self, route: str) -> str:
+        tool_name = self.skill_registry.tool_for_route(route)
+        if tool_name:
+            return tool_name
         return {
             "leetcode_coach": "leetcode_coach",
             "java_stacktrace": "java_stacktrace_analyzer",
             "nl_to_sql": "nl_to_sql_generator",
             "agent_architecture": "agent_architecture_planner",
-            "langgraph": "general_workflow",
-        }.get(route, "general_workflow")
+            "langgraph": "general_model_chat",
+        }.get(route, "general_model_chat")
 
     def _structured(
             self,
@@ -760,6 +999,16 @@ class AgentChatService:
         if hasattr(model, "dict"):
             return model.dict()
         return dict(model)
+
+    def _dump_execution(self, execution: ToolExecution) -> Dict[str, Any]:
+        return {
+            "tool_name": execution.tool_name,
+            "arguments": execution.arguments,
+            "output": execution.output,
+            "status": execution.status,
+            "latency_ms": execution.latency_ms,
+            "error": execution.error,
+        }
 
     def _call_model_for_general_answer(self, question: str, intent: str) -> str:
         if not self.openai_api_key:

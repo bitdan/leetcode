@@ -119,6 +119,42 @@ class AgentChatServiceTest(unittest.TestCase):
         self.assertEqual("java_stacktrace", result.route)
         self.assertEqual("java_stacktrace_analyzer", result.tool_calls[0].tool_name)
 
+    def test_lists_tools_and_skills(self):
+        service = AgentChatService()
+
+        tool_names = {item["name"] for item in service.list_tools()}
+        skill_names = {item["name"] for item in service.list_skills()}
+
+        self.assertIn("read_file", tool_names)
+        self.assertIn("run_command", tool_names)
+        self.assertIn("java-stacktrace-analyzer", skill_names)
+
+    def test_read_only_tool_executes_without_confirmation(self):
+        service = AgentChatService()
+        result = service.invoke_tool("read_file", {"path": "AGENTS.md", "max_chars": 80})
+
+        self.assertEqual("success", result["status"])
+        self.assertIn("content", result["execution"]["output"])
+
+    def test_write_tool_requires_confirmation_then_executes(self):
+        service = AgentChatService()
+        output_path = project_root.parent / "py" / "tests" / ".agent_confirmation_test.txt"
+        result = service.invoke_tool(
+            "write_file",
+            {"path": "py/tests/.agent_confirmation_test.txt", "content": "ok", "overwrite": True},
+            run_id="run_test",
+            session_id="session_test",
+        )
+
+        self.assertEqual("awaiting_confirmation", result["status"])
+        confirmation_id = result["confirmation"]["id"]
+        approved = service.approve_confirmation(confirmation_id)
+
+        self.assertEqual("completed", approved["confirmation"]["status"])
+        self.assertEqual("success", approved["execution"]["status"])
+        if output_path.exists():
+            output_path.unlink()
+
 
 class AgentChatApiTest(unittest.TestCase):
     def setUp(self):
@@ -150,6 +186,29 @@ class AgentChatApiTest(unittest.TestCase):
         self.assertIn("event: route_decided", body)
         self.assertIn("event: answer_delta", body)
         self.assertIn("event: final", body)
+
+    def test_agent_tools_endpoint(self):
+        response = self.client.get("/api/v1/agent/tools")
+
+        self.assertEqual(200, response.status_code)
+        names = {item["name"] for item in response.json()["data"]}
+        self.assertIn("read_file", names)
+
+    def test_agent_tool_invoke_requires_confirmation(self):
+        response = self.client.post(
+            "/api/v1/agent/tools/write_file/invoke",
+            json={
+                "session_id": "session_test",
+                "arguments": {
+                    "path": "py/tests/.agent_confirmation_api_test.txt",
+                    "content": "ok",
+                    "overwrite": True,
+                },
+            },
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("awaiting_confirmation", response.json()["data"]["status"])
 
 
 def api_response(payload):

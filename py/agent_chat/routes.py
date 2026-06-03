@@ -7,8 +7,16 @@ from auth.routes import AUTH_COOKIE_NAME
 from auth.schemas import ApiResponse
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+class AgentToolInvokeRequest(BaseModel):
+    arguments: dict = Field(default_factory=dict)
+    run_id: str | None = None
+    session_id: str | None = None
+    confirmed: bool = False
 
 
 def create_router(container) -> APIRouter:
@@ -136,6 +144,77 @@ def create_router(container) -> APIRouter:
         except Exception as exc:
             logger.exception("Cancel agent run failed")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="取消 Agent run 失败") from exc
+
+    @router.get("/api/v1/agent/tools", response_model=ApiResponse)
+    async def list_tools() -> ApiResponse:
+        return ApiResponse(code=200, msg="获取 Agent tools 成功", data=container.agent_chat_service.list_tools())
+
+    @router.get("/api/v1/agent/skills", response_model=ApiResponse)
+    async def list_skills() -> ApiResponse:
+        return ApiResponse(code=200, msg="获取 Agent skills 成功", data=container.agent_chat_service.list_skills())
+
+    @router.post("/api/v1/agent/tools/{tool_name}/invoke", response_model=ApiResponse)
+    async def invoke_tool(tool_name: str, payload: AgentToolInvokeRequest) -> ApiResponse:
+        try:
+            result = container.agent_chat_service.invoke_tool(
+                tool_name,
+                payload.arguments,
+                run_id=payload.run_id,
+                session_id=payload.session_id,
+                confirmed=payload.confirmed,
+            )
+            return ApiResponse(code=200, msg="Agent tool 调用完成", data=result)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"工具不存在: {tool_name}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Invoke agent tool failed")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Agent tool 调用失败") from exc
+
+    @router.get("/api/v1/agent/confirmations", response_model=ApiResponse)
+    async def list_confirmations(session_id: str | None = None) -> ApiResponse:
+        return ApiResponse(
+            code=200,
+            msg="获取待确认操作成功",
+            data=container.agent_chat_service.list_confirmations(session_id),
+        )
+
+    @router.get("/api/v1/agent/confirmations/{confirmation_id}", response_model=ApiResponse)
+    async def get_confirmation(confirmation_id: str) -> ApiResponse:
+        try:
+            return ApiResponse(
+                code=200,
+                msg="获取待确认操作成功",
+                data=container.agent_chat_service.get_confirmation(confirmation_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    @router.post("/api/v1/agent/confirmations/{confirmation_id}/approve", response_model=ApiResponse)
+    async def approve_confirmation(confirmation_id: str) -> ApiResponse:
+        try:
+            return ApiResponse(
+                code=200,
+                msg="操作已确认并执行",
+                data=container.agent_chat_service.approve_confirmation(confirmation_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Approve agent confirmation failed")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="确认操作执行失败") from exc
+
+    @router.post("/api/v1/agent/confirmations/{confirmation_id}/reject", response_model=ApiResponse)
+    async def reject_confirmation(confirmation_id: str) -> ApiResponse:
+        try:
+            return ApiResponse(
+                code=200,
+                msg="操作已拒绝",
+                data=container.agent_chat_service.reject_confirmation(confirmation_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return router
 

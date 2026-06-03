@@ -153,6 +153,50 @@ class AgentEvalStore:
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
 
+    def get_run_detail(self, run_id: str) -> dict:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                run = session.scalar(select(AgentRun).where(AgentRun.id == run_id))
+                if not run:
+                    raise ValueError("Agent run not found")
+                tool_calls = session.scalars(
+                    select(AgentToolCall).where(AgentToolCall.run_id == run_id).order_by(AgentToolCall.created_at.asc())
+                ).all()
+                return self._run_detail(run, tool_calls)
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def list_session_runs(self, session_id: str, limit: int = 50) -> list[dict]:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                runs = session.scalars(
+                    select(AgentRun).order_by(AgentRun.created_at.desc()).limit(max(limit * 4, limit))
+                ).all()
+                matched = [
+                    self._run_summary(run)
+                    for run in runs
+                    if (run.structured_content or {}).get("session_id") == session_id
+                ]
+                return matched[:limit]
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def cancel_run(self, run_id: str) -> dict:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                run = session.scalar(select(AgentRun).where(AgentRun.id == run_id))
+                if not run:
+                    raise ValueError("Agent run not found")
+                if run.status not in {"pending", "running"}:
+                    return {"run_id": run_id, "status": "not_running", "current_status": run.status}
+                run.status = "cancelled"
+                return {"run_id": run_id, "status": "cancelled"}
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
     def summarize(self) -> dict:
         self._ensure_available()
         try:
@@ -244,6 +288,39 @@ class AgentEvalStore:
 
     def _dump_model(self, model) -> dict:
         return model.model_dump() if hasattr(model, "model_dump") else model.dict()
+
+    def _run_summary(self, run: AgentRun) -> dict:
+        structured = run.structured_content or {}
+        return {
+            "run_id": run.id,
+            "trace_id": run.trace_id,
+            "session_id": structured.get("session_id"),
+            "route": run.route,
+            "status": run.status,
+            "input_text": run.input_text,
+            "output_text": run.output_text,
+            "latency_ms": run.latency_ms,
+            "steps_count": run.steps_count,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+        }
+
+    def _run_detail(self, run: AgentRun, tool_calls: list[AgentToolCall]) -> dict:
+        data = self._run_summary(run)
+        data["structured_content"] = run.structured_content or {}
+        data["tool_calls"] = [
+            {
+                "id": item.id,
+                "tool_name": item.tool_name,
+                "status": item.status,
+                "latency_ms": item.latency_ms,
+                "input_payload": item.input_payload,
+                "output_payload": item.output_payload,
+                "error_message": item.error_message,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in tool_calls
+        ]
+        return data
 
     def _find_run(self, session, run_id: Optional[str], trace_id: Optional[str]):
         if run_id:

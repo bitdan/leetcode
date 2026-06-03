@@ -39,32 +39,14 @@ class AgentEvalService:
         try:
             response = chat_func(request)
             latency_ms = int((time.perf_counter() - started) * 1000)
-            structured = dict(response.structured_content or {})
-            structured["trace_id"] = trace_id
-            structured["run_id"] = run_id
-            response.structured_content = structured
-            run_record = AgentRunRecord(
-                id=run_id,
-                trace_id=trace_id,
-                user_id=user_id,
-                route=response.route,
-                input_text=request.message,
-                output_text=response.answer,
-                structured_content=structured,
-                status="success",
+            return self.record_chat_response(
+                request,
+                response,
+                current_user=current_user,
+                fallback_run_id=run_id,
+                fallback_trace_id=trace_id,
                 latency_ms=latency_ms,
-                steps_count=self._count_steps(structured),
-                retry_count=self._extract_int(structured, "retry_count"),
-                prompt_tokens=self._extract_int(structured, "prompt_tokens"),
-                completion_tokens=self._extract_int(structured, "completion_tokens"),
-                total_tokens=self._extract_int(structured, "total_tokens"),
-                estimated_cost=float(structured.get("estimated_cost") or 0),
-                prompt_version=str(structured.get("prompt_version") or self.prompt_version),
-                model_name=str(structured.get("model_name") or self.model_name),
             )
-            self._safe_create_run(run_record)
-            self._safe_create_tool_calls(run_id, response.route, request.message, structured, latency_ms)
-            return response
         except Exception as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
             self._safe_create_run(
@@ -85,6 +67,55 @@ class AgentEvalService:
                 )
             )
             raise
+
+    def record_chat_response(
+            self,
+            request: AgentChatRequest,
+            response: AgentChatResponse,
+            current_user: Optional[UserInfo] = None,
+            fallback_run_id: Optional[str] = None,
+            fallback_trace_id: Optional[str] = None,
+            latency_ms: Optional[int] = None,
+    ) -> AgentChatResponse:
+        structured = dict(response.structured_content or {})
+        run_id = response.run_id or structured.get("run_id") or fallback_run_id or f"run_{uuid.uuid4().hex}"
+        trace_id = response.trace_id or structured.get("trace_id") or fallback_trace_id or f"trace_{uuid.uuid4().hex}"
+        structured["run_id"] = run_id
+        structured["trace_id"] = trace_id
+        if response.session_id:
+            structured["session_id"] = response.session_id
+        response.run_id = run_id
+        response.trace_id = trace_id
+        response.structured_content = structured
+        measured_latency = latency_ms
+        if measured_latency is None:
+            measured_latency = getattr(response.metrics, "latency_ms", 0)
+        if response.metrics:
+            response.metrics.latency_ms = measured_latency or response.metrics.latency_ms
+            response.metrics.steps_count = response.metrics.steps_count or self._count_steps(structured)
+        user_id = self._user_id(current_user)
+        run_record = AgentRunRecord(
+            id=run_id,
+            trace_id=trace_id,
+            user_id=user_id,
+            route=response.route,
+            input_text=request.message,
+            output_text=response.answer,
+            structured_content=structured,
+            status=response.status or "success",
+            latency_ms=measured_latency or 0,
+            steps_count=getattr(response.metrics, "steps_count", 0) or self._count_steps(structured),
+            retry_count=self._extract_int(structured, "retry_count"),
+            prompt_tokens=self._extract_int(structured, "prompt_tokens"),
+            completion_tokens=self._extract_int(structured, "completion_tokens"),
+            total_tokens=self._extract_int(structured, "total_tokens"),
+            estimated_cost=float(structured.get("estimated_cost") or 0),
+            prompt_version=str(structured.get("prompt_version") or self.prompt_version),
+            model_name=str(structured.get("model_name") or self.model_name),
+        )
+        self._safe_create_run(run_record)
+        self._safe_create_tool_calls(run_id, response.route, request.message, structured, measured_latency or 0, response)
+        return response
 
     def create_feedback(self, payload: AgentFeedbackRequest, current_user: Optional[UserInfo] = None) -> str:
         return self.store.create_feedback(payload, self._user_id(current_user))
@@ -132,6 +163,15 @@ class AgentEvalService:
         except AgentEvalStoreUnavailable:
             return AgentEvalSummary()
 
+    def get_run_detail(self, run_id: str) -> dict:
+        return self.store.get_run_detail(run_id)
+
+    def list_session_runs(self, session_id: str, limit: int = 50) -> list[dict]:
+        return self.store.list_session_runs(session_id, limit)
+
+    def cancel_run(self, run_id: str) -> dict:
+        return self.store.cancel_run(run_id)
+
     def _safe_create_run(self, record: AgentRunRecord) -> None:
         try:
             self.store.create_run(record)
@@ -147,10 +187,27 @@ class AgentEvalService:
             input_text: str,
             structured: dict,
             latency_ms: int,
+            response: Optional[AgentChatResponse] = None,
     ) -> None:
-        trace = structured.get("trace") or []
         calls = []
-        if isinstance(trace, list) and trace:
+        response_tool_calls = list(getattr(response, "tool_calls", []) or [])
+        if response_tool_calls:
+            for item in response_tool_calls:
+                calls.append(
+                    AgentToolCallRecord(
+                        id=f"tool_{uuid.uuid4().hex}",
+                        run_id=run_id,
+                        tool_name=item.tool_name,
+                        status=item.status,
+                        latency_ms=item.latency_ms,
+                        input_payload=item.input_payload,
+                        output_payload={"summary": item.output_summary},
+                        error_message=item.error,
+                    )
+                )
+        else:
+            trace = structured.get("trace") or []
+        if not calls and isinstance(trace, list) and trace:
             for item in trace:
                 if not isinstance(item, dict):
                     continue

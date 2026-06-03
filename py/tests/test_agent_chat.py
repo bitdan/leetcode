@@ -64,6 +64,10 @@ class AgentChatServiceTest(unittest.TestCase):
         self.assertIn("Evaluator", result.answer)
         self.assertNotIn("结果\n", result.answer)
         self.assertEqual("agent_architecture", result.structured_content["trace"][0]["output_summary"])
+        self.assertTrue(result.run_id.startswith("run_"))
+        self.assertTrue(result.trace_id.startswith("trace_"))
+        self.assertEqual("route_decided", result.steps[0].node)
+        self.assertEqual("agent_architecture_planner", result.tool_calls[0].tool_name)
 
 
 class AgentChatApiTest(unittest.TestCase):
@@ -84,6 +88,14 @@ class AgentChatApiTest(unittest.TestCase):
                                         json={"message": "Two Sum\n```java\nclass Solution {}\n```"})
         self.assertEqual(200, response.status_code)
         self.assertEqual("leetcode_coach", response.json()["route"])
+
+    def test_chat_stream_endpoint_emits_final_response(self):
+        with self.client.stream("POST", "/api/v1/agent/chat/stream", json={"message": "如何实现agent"}) as response:
+            body = response.read().decode("utf-8")
+        self.assertEqual(200, response.status_code)
+        self.assertIn("event: route_decided", body)
+        self.assertIn("event: answer_delta", body)
+        self.assertIn("event: final", body)
 
 
 def api_response(payload):

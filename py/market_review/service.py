@@ -126,7 +126,7 @@ class MarketReviewService:
         return result
 
     def _fetch_missing_st_limit_up_stocks(self, ak: Any, normalized_date: str, known_codes: set) -> List[LimitUpStock]:
-        if normalized_date != date.today().strftime("%Y-%m-%d"):
+        if normalized_date != self._now().strftime("%Y-%m-%d"):
             return []
         try:
             frame = ak.stock_zh_a_st_em()
@@ -411,6 +411,18 @@ class MarketReviewService:
         except Exception:
             logger.warning("Market review failure status save skipped for %s", normalized_date, exc_info=True)
             return
+
+    def normalize_date(self, value: Optional[str] = None) -> str:
+        return self._normalize_date(value)
+
+    def snapshot_status(self, trading_date: Optional[str] = None) -> str:
+        return self._snapshot_status(self.normalize_date(trading_date))
+
+    def is_final_snapshot(self, trading_date: Optional[str] = None) -> bool:
+        return self.snapshot_status(trading_date) == SNAPSHOT_FINAL
+
+    def normalize_pool_type(self, value: str) -> str:
+        return self._normalize_pool_type(value)
 
     def status(self, trading_date: Optional[str] = None) -> Optional[dict]:
         normalized_date = self._normalize_date(trading_date)

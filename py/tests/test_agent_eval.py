@@ -5,7 +5,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
 
-from agent_chat.service import AgentChatRequest, AgentChatResponse
+from agent_chat.service import AgentChatRequest, AgentChatResponse, AgentChatToolCall
 from agent_eval.schemas import AgentEvalCaseFromRunRequest, AgentEvalCaseRecord, AgentEvalRunRequest, \
     AgentFeedbackRequest
 from agent_eval.service import AgentEvalService
@@ -99,6 +99,33 @@ class AgentEvalServiceTest(unittest.TestCase):
         self.assertTrue(response.structured_content["trace_id"].startswith("trace_"))
         self.assertTrue(response.structured_content["run_id"].startswith("run_"))
         self.assertEqual("draft", store.tool_calls[0].tool_name)
+
+    def test_response_tool_calls_are_not_duplicated_with_fallback_record(self):
+        store = FakeAgentEvalStore()
+        service = AgentEvalService(store)
+
+        def chat_func(_request):
+            return AgentChatResponse(
+                route="langgraph",
+                title="通用工作流",
+                answer="ok",
+                structured_content={},
+                tool_calls=[
+                    AgentChatToolCall(
+                        tool_name="general_model_chat",
+                        input_payload={"message": "hello"},
+                        output_summary="ok",
+                        status="success",
+                        latency_ms=8,
+                    )
+                ],
+            )
+
+        service.run_traced_chat(AgentChatRequest(message="hello"), chat_func)
+
+        self.assertEqual(1, len(store.tool_calls))
+        self.assertEqual("general_model_chat", store.tool_calls[0].tool_name)
+        self.assertEqual({"summary": "ok"}, store.tool_calls[0].output_payload)
 
     def test_feedback_delegates_to_store(self):
         store = FakeAgentEvalStore()

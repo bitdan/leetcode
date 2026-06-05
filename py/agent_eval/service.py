@@ -207,23 +207,23 @@ class AgentEvalService:
                 )
         else:
             trace = structured.get("trace") or []
-        if not calls and isinstance(trace, list) and trace:
-            for item in trace:
-                if not isinstance(item, dict):
-                    continue
-                calls.append(
-                    AgentToolCallRecord(
-                        id=f"tool_{uuid.uuid4().hex}",
-                        run_id=run_id,
-                        tool_name=str(item.get("node") or route),
-                        status="success" if not item.get("error") else "failed",
-                        latency_ms=self._extract_int(item, "latency_ms"),
-                        input_payload={"summary": item.get("input_summary")},
-                        output_payload={"summary": item.get("output_summary"), "decision": item.get("decision")},
-                        error_message=item.get("error"),
+            if isinstance(trace, list) and trace:
+                for item in trace:
+                    if not isinstance(item, dict):
+                        continue
+                    calls.append(
+                        AgentToolCallRecord(
+                            id=f"tool_{uuid.uuid4().hex}",
+                            run_id=run_id,
+                            tool_name=str(item.get("node") or route),
+                            status="success" if not item.get("error") else "failed",
+                            latency_ms=self._extract_int(item, "latency_ms"),
+                            input_payload={"summary": item.get("input_summary")},
+                            output_payload={"summary": item.get("output_summary"), "decision": item.get("decision")},
+                            error_message=item.get("error"),
+                        )
                     )
-                )
-        else:
+        if not calls:
             calls.append(
                 AgentToolCallRecord(
                     id=f"tool_{uuid.uuid4().hex}",

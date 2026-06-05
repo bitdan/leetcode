@@ -15,9 +15,9 @@ def create_router(container) -> APIRouter:
 
     def dump_review(data) -> dict:
         payload = dump_model(data)
-        snapshot_status = service._snapshot_status(data.date)
+        snapshot_status = service.snapshot_status(data.date)
         payload["snapshot_status"] = snapshot_status
-        payload["is_final"] = snapshot_status == "final"
+        payload["is_final"] = service.is_final_snapshot(data.date)
         return payload
 
     @router.get("", response_model=ApiResponse)
@@ -36,7 +36,7 @@ def create_router(container) -> APIRouter:
             date: str = Query(default=""),
             refresh: bool = Query(default=False),
     ):
-        normalized_date = service._normalize_date(date or None)
+        normalized_date = service.normalize_date(date or None)
         background_tasks.add_task(service.review, normalized_date, refresh)
         return ApiResponse(code=200, msg="市场复盘预热任务已提交", data={"date": normalized_date})
 
@@ -53,7 +53,7 @@ def create_router(container) -> APIRouter:
     @router.get("/status", response_model=ApiResponse)
     async def status_view(date: str = Query(default="")):
         try:
-            normalized_date = service._normalize_date(date or None)
+            normalized_date = service.normalize_date(date or None)
             data = service.status(normalized_date) or {"date": normalized_date, "status": "missing"}
             return ApiResponse(code=200, msg="获取市场复盘状态成功", data=data)
         except ValueError as exc:
@@ -106,10 +106,12 @@ def create_router(container) -> APIRouter:
             refresh: bool = Query(default=False),
     ):
         try:
+            review_data = service.review(date or None, refresh=refresh)
+            normalized_pool_type = service.normalize_pool_type(pool_type)
             data = [
                 dump_model(item)
-                for item in service.review(date or None, refresh=refresh).advancement_candidates
-                if item.pool_type == service._normalize_pool_type(pool_type)
+                for item in review_data.advancement_candidates
+                if item.pool_type == normalized_pool_type
             ]
             return ApiResponse(code=200, msg="获取连板候选成功", data=data)
         except ValueError as exc:

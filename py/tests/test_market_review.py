@@ -350,6 +350,18 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertEqual("store_unavailable", status_payload["status"])
         self.assertIn("Alembic", status_payload["error_message"])
 
+    def test_public_route_helpers_normalize_market_review_inputs(self):
+        service = MarketReviewService(cache_ttl_seconds=300)
+        service._now = lambda: datetime(2026, 5, 25, 12, 0, 0)
+
+        self.assertEqual("2026-05-22", service.normalize_date("20260522"))
+        self.assertEqual("2_to_3", service.normalize_pool_type("2-TO-3"))
+        self.assertEqual("intraday", service.snapshot_status("2026-05-25"))
+        self.assertFalse(service.is_final_snapshot("2026-05-25"))
+
+        service._now = lambda: datetime(2026, 5, 25, 15, 11, 0)
+        self.assertTrue(service.is_final_snapshot("2026-05-25"))
+
     def test_stock_kline_returns_stored_bars(self):
         store = FakeMarketReviewStore()
         store.kline_bars = build_kline_bars()
@@ -876,6 +888,7 @@ class MarketReviewServiceTest(unittest.TestCase):
                 ])
 
         service = MarketReviewService()
+        service._now = lambda: datetime(2026, 6, 2, 10, 30, 0)
         with patch.object(service, "_load_akshare", return_value=FakeAkshare), \
                 patch.object(service, "_estimate_st_consecutive_boards", return_value=6):
             pool = service.limit_up_pool("2026-06-02", refresh=True)

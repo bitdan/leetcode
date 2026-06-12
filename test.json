@@ -1,0 +1,49 @@
+{
+  "code": 0,
+  "data": {
+    "approval_name": "测试",
+    "form": "[{\"default_value_type\":\"\",\"display_condition\":null,\"enable_default_value\":false,\"id\":\"widget17812367361730001\",\"name\":\"产品SKU\",\"printable\":true,\"required\":true,\"type\":\"input\",\"visible\":true,\"widget_default_value\":\"\"},{\"default_value_type\":\"\",\"display_condition\":null,\"enable_default_value\":false,\"id\":\"widget17812370806280001\",\"name\":\"产品名称\",\"printable\":true,\"required\":true,\"type\":\"input\",\"visible\":true,\"widget_default_value\":\"\"},{\"default_value_type\":\"\",\"display_condition\":null,\"enable_default_value\":false,\"id\":\"widget17803097356090001\",\"name\":\"变更内容\",\"printable\":true,\"required\":true,\"type\":\"textarea\",\"visible\":true,\"widget_default_value\":\"\"},{\"default_value_type\":\"\",\"display_condition\":null,\"enable_default_value\":false,\"id\":\"widget17812368288290001\",\"name\":\"原因\",\"printable\":true,\"required\":true,\"type\":\"input\",\"visible\":true,\"widget_default_value\":\"\"},{\"default_value_type\":\"\",\"display_condition\":null,\"enable_default_value\":false,\"id\":\"widget17803097333570001\",\"name\":\"文档\",\"option\":{\"archiveFolder\":\"\",\"needArchive\":false,\"wikiFullPathTitle\":\"\"},\"printable\":true,\"required\":true,\"type\":\"document\",\"visible\":true,\"widget_default_value\":\"\"}]",
+    "form_widget_relation": "{\"groups\":[]}",
+    "node_list": [
+      {
+        "approver_chosen_multi": true,
+        "approver_chosen_range": [
+          {
+            "approver_range_ids": [],
+            "approver_range_type": 0
+          }
+        ],
+        "name": "审批",
+        "need_approver": true,
+        "node_id": "32624c5b1e7815697b5111bd38958be6",
+        "node_type": "AND",
+        "require_signature": false
+      },
+      {
+        "approver_chosen_multi": true,
+        "name": "结束",
+        "need_approver": false,
+        "node_id": "b1a326c06d88bf042f73d70f50197905",
+        "node_type": "AND",
+        "require_signature": false
+      },
+      {
+        "approver_chosen_multi": true,
+        "name": "提交",
+        "need_approver": false,
+        "node_id": "b078ffd28db767c502ac367053f6e0ac",
+        "node_type": "AND",
+        "require_signature": false
+      }
+    ],
+    "status": "ACTIVE",
+    "viewers": [
+      {
+        "id": "",
+        "type": "TENANT",
+        "user_id": ""
+      }
+    ]
+  },
+  "msg": ""
+}

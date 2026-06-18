@@ -7,6 +7,8 @@ from db.session import create_session_factory, session_scope
 from market_review.db_models import (
     MarketCandidatePool,
     MarketLimitUpPool,
+    MarketRadarCandidateSnapshot,
+    MarketRadarSectorSnapshot,
     MarketReviewRun,
     MarketReviewSignal,
     MarketSectorStrength,
@@ -18,6 +20,9 @@ from market_review.schemas import (
     CandidateStock,
     DivergenceConsensusSignal,
     LimitUpStock,
+    MarketRadarCandidate,
+    MarketRadarData,
+    MarketRadarSector,
     MarketReviewData,
     SectorStrength,
     StockKlineBar,
@@ -155,6 +160,59 @@ class MarketReviewStore:
                     "uq_market_review_signal_date_type_code",
                     ("trade_date", "signal_type", "code"),
                     ("signal_type", "code"),
+                )
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+
+    def get_radar(self, trade_date: str) -> Optional[MarketRadarData]:
+        if not self.session_factory:
+            return None
+        try:
+            with session_scope(self.session_factory) as session:
+                parsed_date = self._parse_date(trade_date)
+                sector_rows = session.scalars(
+                    select(MarketRadarSectorSnapshot)
+                    .where(MarketRadarSectorSnapshot.trade_date == parsed_date)
+                    .order_by(MarketRadarSectorSnapshot.heat_score.desc())
+                ).all()
+                candidate_rows = session.scalars(
+                    select(MarketRadarCandidateSnapshot)
+                    .where(MarketRadarCandidateSnapshot.trade_date == parsed_date)
+                    .order_by(MarketRadarCandidateSnapshot.candidate_score.desc())
+                ).all()
+                if not sector_rows and not candidate_rows:
+                    return None
+                return MarketRadarData(
+                    date=trade_date,
+                    sectors=[self._radar_sector_from_row(item) for item in sector_rows],
+                    candidates=[self._radar_candidate_from_row(item) for item in candidate_rows],
+                )
+        except SQLAlchemyError as exc:
+            self._mark_unavailable(exc)
+        return None
+
+    def save_radar(self, data: MarketRadarData) -> None:
+        self._ensure_available()
+        try:
+            with session_scope(self.session_factory) as session:
+                parsed_date = self._parse_date(data.date)
+                self._replace_by_upsert(
+                    session,
+                    MarketRadarSectorSnapshot,
+                    [self._radar_sector_to_row(parsed_date, item) for item in data.sectors],
+                    parsed_date,
+                    "uq_market_radar_sector_date_type_name",
+                    ("trade_date", "sector_type", "sector_name"),
+                    ("sector_type", "sector_name"),
+                )
+                self._replace_by_upsert(
+                    session,
+                    MarketRadarCandidateSnapshot,
+                    [self._radar_candidate_to_row(parsed_date, item) for item in data.candidates],
+                    parsed_date,
+                    "uq_market_radar_candidate_date_code_signal",
+                    ("trade_date", "code", "signal_type"),
+                    ("code", "signal_type"),
                 )
         except SQLAlchemyError as exc:
             self._mark_unavailable(exc)
@@ -583,6 +641,42 @@ class MarketReviewStore:
             risks=list(row.risks or []),
         )
 
+    def _radar_sector_from_row(self, row: MarketRadarSectorSnapshot) -> MarketRadarSector:
+        return MarketRadarSector(
+            sector_name=row.sector_name,
+            sector_type=row.sector_type,
+            heat_score=float(row.heat_score or 0),
+            momentum_score=float(row.momentum_score or 0),
+            liquidity_score=float(row.liquidity_score or 0),
+            breadth_score=float(row.breadth_score or 0),
+            limit_up_count=row.limit_up_count,
+            strong_stock_count=row.strong_stock_count,
+            stock_count=row.stock_count,
+            rise_count=row.rise_count,
+            change_percent=float(row.change_percent or 0),
+            total_amount=float(row.total_amount or 0),
+            core_stocks=list(row.core_stocks or []),
+            reasons=list(row.reasons or []),
+            risks=list(row.risks or []),
+        )
+
+    def _radar_candidate_from_row(self, row: MarketRadarCandidateSnapshot) -> MarketRadarCandidate:
+        return MarketRadarCandidate(
+            code=row.code,
+            name=row.name,
+            industry=row.industry,
+            latest_price=self._number(row.latest_price),
+            change_percent=self._number(row.change_percent),
+            turnover_rate=self._number(row.turnover_rate),
+            amount=self._number(row.amount),
+            candidate_score=float(row.candidate_score or 0),
+            sector_heat_score=float(row.sector_heat_score or 0),
+            signal_type=row.signal_type,
+            reasons=list(row.reasons or []),
+            risks=list(row.risks or []),
+            tags=list(row.tags or []),
+        )
+
     @staticmethod
     def _stock_to_row(trade_date, item: LimitUpStock) -> MarketLimitUpPool:
         raw_payload = dict(item.raw_payload)
@@ -640,6 +734,46 @@ class MarketReviewStore:
             reasons=list(item.reasons),
             risks=list(item.risks),
             rule_version="v1",
+        )
+
+    @staticmethod
+    def _radar_sector_to_row(trade_date, item: MarketRadarSector) -> MarketRadarSectorSnapshot:
+        return MarketRadarSectorSnapshot(
+            trade_date=trade_date,
+            sector_name=item.sector_name,
+            sector_type=item.sector_type,
+            heat_score=item.heat_score,
+            momentum_score=item.momentum_score,
+            liquidity_score=item.liquidity_score,
+            breadth_score=item.breadth_score,
+            limit_up_count=item.limit_up_count,
+            strong_stock_count=item.strong_stock_count,
+            stock_count=item.stock_count,
+            rise_count=item.rise_count,
+            change_percent=item.change_percent,
+            total_amount=item.total_amount,
+            core_stocks=list(item.core_stocks),
+            reasons=list(item.reasons),
+            risks=list(item.risks),
+        )
+
+    @staticmethod
+    def _radar_candidate_to_row(trade_date, item: MarketRadarCandidate) -> MarketRadarCandidateSnapshot:
+        return MarketRadarCandidateSnapshot(
+            trade_date=trade_date,
+            code=item.code,
+            name=item.name,
+            industry=item.industry,
+            latest_price=item.latest_price,
+            change_percent=item.change_percent,
+            turnover_rate=item.turnover_rate,
+            amount=item.amount,
+            candidate_score=item.candidate_score,
+            sector_heat_score=item.sector_heat_score,
+            signal_type=item.signal_type,
+            reasons=list(item.reasons),
+            risks=list(item.risks),
+            tags=list(item.tags),
         )
 
     @staticmethod

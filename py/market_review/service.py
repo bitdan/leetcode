@@ -14,6 +14,9 @@ from market_review.schemas import (
     IntradayTradingSignal,
     LimitUpStock,
     MarketEnvironment,
+    MarketRadarCandidate,
+    MarketRadarData,
+    MarketRadarSector,
     MarketReviewData,
     SectorStrength,
     StockKlineBar,
@@ -45,6 +48,7 @@ class MarketReviewService:
         self._limit_up_cache: Dict[str, Tuple[float, List[LimitUpStock]]] = {}
         self._review_cache: Dict[str, Tuple[float, MarketReviewData, str]] = {}
         self._environment_cache: Dict[str, Tuple[float, MarketEnvironment]] = {}
+        self._radar_cache: Dict[str, Tuple[float, MarketRadarData, str]] = {}
         self._final_snapshot_task: Optional[asyncio.Task] = None
         self._kline_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="market-review-kline")
 
@@ -71,6 +75,46 @@ class MarketReviewService:
         self._prime_caches(normalized_date, data, snapshot_status)
         return data
 
+    def market_radar(
+            self,
+            trading_date: Optional[str] = None,
+            refresh: bool = False,
+            sector_limit: int = 20,
+            candidate_limit: int = 80,
+    ) -> MarketRadarData:
+        normalized_date = self._normalize_date(trading_date)
+        snapshot_status = self._snapshot_status(normalized_date)
+        if not refresh:
+            cached = self._get_cached_radar(normalized_date, snapshot_status)
+            if cached is not None:
+                return cached
+            if snapshot_status == SNAPSHOT_FINAL and self.store and self.store.is_available():
+                try:
+                    stored = self.store.get_radar(normalized_date)
+                    if stored is not None:
+                        review_data = self.review(normalized_date, refresh=False)
+                        stored.market_environment = review_data.market_environment
+                        stored.generated_at = self._now().isoformat()
+                        self._radar_cache[normalized_date] = (monotonic(), stored, snapshot_status)
+                        return stored
+                except MarketReviewStoreUnavailable as exc:
+                    logger.warning("Market radar snapshot load skipped for %s: %s", normalized_date, exc)
+
+        review_data = self.review(normalized_date, refresh=refresh)
+        radar = self._build_market_radar(
+            normalized_date,
+            review_data,
+            sector_limit=max(1, min(sector_limit, 60)),
+            candidate_limit=max(1, min(candidate_limit, 200)),
+        )
+        if self.store and self.store.is_available():
+            try:
+                self.store.save_radar(radar)
+            except MarketReviewStoreUnavailable as exc:
+                logger.warning("Market radar snapshot save skipped for %s: %s", normalized_date, exc)
+        self._radar_cache[normalized_date] = (monotonic(), radar, snapshot_status)
+        return radar
+
     def _build_review(self, normalized_date: str, refresh: bool = False) -> MarketReviewData:
         pool = self.limit_up_pool(normalized_date, refresh=refresh)
         environment = self.market_environment(normalized_date, pool, refresh=refresh)
@@ -86,6 +130,312 @@ class MarketReviewService:
             divergence_consensus=signals,
             market_environment=environment,
         )
+
+    def _build_market_radar(
+            self,
+            normalized_date: str,
+            review_data: MarketReviewData,
+            sector_limit: int,
+            candidate_limit: int,
+    ) -> MarketRadarData:
+        pool = review_data.limit_up_pool
+        environment = review_data.market_environment or self.market_environment(normalized_date, pool)
+        spot_rows: List[dict] = []
+        source_note = ""
+        if normalized_date == self._now().strftime("%Y-%m-%d"):
+            try:
+                spot_rows = self._fetch_market_spot_rows()
+            except Exception as exc:
+                source_note = "全市场快照不可用，已退化为涨停池雷达"
+                logger.warning("Market radar spot fetch skipped for %s: %s", normalized_date, exc)
+        else:
+            source_note = "历史日期暂无全市场快照，已退化为涨停池雷达"
+
+        if spot_rows:
+            sectors, candidates = self._radar_from_spot_rows(
+                spot_rows,
+                pool,
+                sector_limit=sector_limit,
+                candidate_limit=candidate_limit,
+            )
+        else:
+            sectors, candidates = self._radar_from_limit_up_pool(
+                pool,
+                review_data.sector_strength,
+                candidate_limit=candidate_limit,
+                source_note=source_note,
+            )
+        return MarketRadarData(
+            date=normalized_date,
+            market_environment=environment,
+            sectors=sectors[:sector_limit],
+            candidates=candidates[:candidate_limit],
+            generated_at=self._now().isoformat(),
+        )
+
+    def _fetch_market_spot_rows(self) -> List[dict]:
+        ak = self._load_akshare()
+        if not hasattr(ak, "stock_zh_a_spot_em"):
+            raise MarketReviewUnavailable("行情服务缺少 A 股实时快照接口")
+        frame = ak.stock_zh_a_spot_em()
+        rows = frame.to_dict(orient="records")
+        if not rows:
+            raise MarketReviewUnavailable("A 股实时快照为空")
+        return rows
+
+    def _radar_from_spot_rows(
+            self,
+            rows: List[dict],
+            pool: List[LimitUpStock],
+            sector_limit: int,
+            candidate_limit: int,
+    ) -> Tuple[List[MarketRadarSector], List[MarketRadarCandidate]]:
+        limit_up_by_code = {item.code: item for item in pool}
+        grouped: Dict[str, List[dict]] = defaultdict(list)
+        for row in rows:
+            code = self._normalize_code(str(self._pick(row, "代码", "code", "股票代码", default="")))
+            name = str(self._pick(row, "名称", "name", "股票简称", default="") or "").strip()
+            if not code or not name or self._is_excluded_stock_name(name):
+                continue
+            industry = self._normalize_sector_name(self._pick(row, "所属行业", "行业", "industry", default=""))
+            if not industry:
+                industry = "未分类"
+            grouped[industry].append(row)
+
+        sectors: List[MarketRadarSector] = []
+        for industry, items in grouped.items():
+            sector = self._build_spot_sector(industry, items, limit_up_by_code)
+            if sector.stock_count < 2 and sector.limit_up_count == 0:
+                continue
+            sectors.append(sector)
+        sectors.sort(key=lambda item: item.heat_score, reverse=True)
+        sector_score_map = {item.sector_name: item.heat_score for item in sectors[:sector_limit]}
+
+        candidates: List[MarketRadarCandidate] = []
+        for row in rows:
+            candidate = self._build_spot_candidate(row, sector_score_map, limit_up_by_code)
+            if candidate is not None:
+                candidates.append(candidate)
+        candidates.sort(key=lambda item: item.candidate_score, reverse=True)
+        return sectors, candidates[:candidate_limit]
+
+    def _build_spot_sector(
+            self,
+            industry: str,
+            rows: List[dict],
+            limit_up_by_code: Dict[str, LimitUpStock],
+    ) -> MarketRadarSector:
+        stock_count = len(rows)
+        rise_count = 0
+        strong_count = 0
+        total_amount = 0.0
+        weighted_change = 0.0
+        limit_up_count = 0
+        ranked_rows = []
+        for row in rows:
+            code = self._normalize_code(str(self._pick(row, "代码", "code", "股票代码", default="")))
+            name = str(self._pick(row, "名称", "name", "股票简称", default="") or "").strip()
+            change = self._to_float(self._pick(row, "涨跌幅", "change_percent")) or 0.0
+            amount = self._to_float(self._pick(row, "成交额", "amount")) or 0.0
+            total_amount += amount
+            weighted_change += change * max(amount, 1.0)
+            if change > 0:
+                rise_count += 1
+            if change >= 5:
+                strong_count += 1
+            if code in limit_up_by_code or change >= self._limit_up_percent_threshold(row):
+                limit_up_count += 1
+            ranked_rows.append((change, amount, name))
+
+        change_percent = weighted_change / max(total_amount, 1.0)
+        rise_ratio = rise_count / max(stock_count, 1)
+        strong_ratio = strong_count / max(stock_count, 1)
+        momentum_score = self._ratio_score(
+            change_percent,
+            [(5.0, 96), (3.0, 84), (1.5, 70), (0.5, 56), (0.0, 42), (-2.0, 24), (-100.0, 10)],
+        )
+        breadth_score = self._ratio_score(
+            rise_ratio,
+            [(0.82, 96), (0.70, 84), (0.58, 70), (0.48, 56), (0.35, 36), (0.0, 18)],
+        )
+        liquidity_score = self._amount_activity_score(total_amount)
+        pulse_score = self._ratio_score(
+            strong_ratio,
+            [(0.16, 96), (0.10, 84), (0.06, 70), (0.03, 54), (0.0, 34)],
+        )
+        limit_score = self._limit_up_diffusion_score(limit_up_count)
+        heat_score = self._clamp_score(
+            momentum_score * 0.28
+            + breadth_score * 0.24
+            + liquidity_score * 0.18
+            + pulse_score * 0.18
+            + limit_score * 0.12
+        )
+        core_stocks = [
+            name for _, _, name in sorted(ranked_rows, key=lambda item: (item[0], item[1]), reverse=True)[:4]
+            if name
+        ]
+        reasons = []
+        risks = []
+        if change_percent >= 1.5:
+            reasons.append("板块涨幅领先")
+        if rise_ratio >= 0.6:
+            reasons.append("板块内上涨家数占优")
+        if strong_count >= 3:
+            reasons.append("强势股扩散")
+        if limit_up_count > 0:
+            reasons.append("有涨停情绪确认")
+        if stock_count < 4:
+            risks.append("样本数量偏少")
+        if rise_ratio < 0.45:
+            risks.append("内部一致性不足")
+        if total_amount <= 0:
+            risks.append("成交额缺失")
+        return MarketRadarSector(
+            sector_name=industry,
+            heat_score=round(heat_score, 2),
+            momentum_score=round(momentum_score, 2),
+            liquidity_score=round(liquidity_score, 2),
+            breadth_score=round(breadth_score, 2),
+            limit_up_count=limit_up_count,
+            strong_stock_count=strong_count,
+            stock_count=stock_count,
+            rise_count=rise_count,
+            change_percent=round(change_percent, 4),
+            total_amount=round(total_amount, 2),
+            core_stocks=core_stocks,
+            reasons=reasons or ["板块进入雷达观察"],
+            risks=risks,
+        )
+
+    def _build_spot_candidate(
+            self,
+            row: dict,
+            sector_score_map: Dict[str, float],
+            limit_up_by_code: Dict[str, LimitUpStock],
+    ) -> Optional[MarketRadarCandidate]:
+        code = self._normalize_code(str(self._pick(row, "代码", "code", "股票代码", default="")))
+        name = str(self._pick(row, "名称", "name", "股票简称", default="") or "").strip()
+        if not code or not name or self._is_excluded_stock_name(name):
+            return None
+        industry = self._normalize_sector_name(self._pick(row, "所属行业", "行业", "industry", default="")) or "未分类"
+        sector_heat = sector_score_map.get(industry, 0)
+        if sector_heat <= 0:
+            return None
+
+        change = self._to_float(self._pick(row, "涨跌幅", "change_percent"))
+        amount = self._to_float(self._pick(row, "成交额", "amount"))
+        turnover = self._to_float(self._pick(row, "换手率", "turnover_rate"))
+        latest_price = self._to_float(self._pick(row, "最新价", "收盘价", "close", "price"))
+        if amount is not None and amount < 20000000 and code not in limit_up_by_code:
+            return None
+        if change is None or change < -3:
+            return None
+
+        momentum_score = self._ratio_score(
+            change,
+            [(9.5, 96), (6.0, 86), (3.0, 74), (1.0, 58), (0.0, 42), (-3.0, 24), (-100.0, 10)],
+        )
+        amount_score = self._amount_activity_score(amount or 0)
+        turnover_score = self._band_score(turnover or 0, 1.0, 18.0, 35.0) if turnover is not None else 42
+        limit_up_bonus = 10 if code in limit_up_by_code else 0
+        score = self._clamp_score(
+            sector_heat * 0.38
+            + momentum_score * 0.28
+            + amount_score * 0.18
+            + turnover_score * 0.10
+            + limit_up_bonus
+        )
+        if score < 55:
+            return None
+
+        reasons = ["所属板块热度靠前"]
+        risks = []
+        tags = []
+        if change is not None and change >= 3:
+            reasons.append("个股涨幅强于市场")
+            tags.append("强势上涨")
+        if amount is not None and amount >= 100000000:
+            reasons.append("成交额达到活跃区间")
+            tags.append("资金活跃")
+        if turnover is not None and 2 <= turnover <= 18:
+            reasons.append("换手处于可跟踪区间")
+        if code in limit_up_by_code:
+            tags.append("涨停确认")
+            limit_stock = limit_up_by_code[code]
+            if limit_stock.tags:
+                risks.extend(limit_stock.tags)
+        if turnover is not None and turnover > 30:
+            risks.append("换手过高")
+        if change is not None and change >= 9:
+            risks.append("短线涨幅已高")
+        if industry == "未分类":
+            risks.append("板块归属缺失")
+
+        return MarketRadarCandidate(
+            code=code,
+            name=name,
+            industry=industry,
+            latest_price=latest_price,
+            change_percent=change,
+            turnover_rate=turnover,
+            amount=amount,
+            candidate_score=round(score, 2),
+            sector_heat_score=round(sector_heat, 2),
+            signal_type="limit_up" if code in limit_up_by_code else "sector_strength",
+            reasons=list(dict.fromkeys(reasons)),
+            risks=list(dict.fromkeys(risks)),
+            tags=list(dict.fromkeys(tags)),
+        )
+
+    def _radar_from_limit_up_pool(
+            self,
+            pool: List[LimitUpStock],
+            sector_strength: List[SectorStrength],
+            candidate_limit: int,
+            source_note: str,
+    ) -> Tuple[List[MarketRadarSector], List[MarketRadarCandidate]]:
+        sectors = [
+            MarketRadarSector(
+                sector_name=item.industry,
+                heat_score=item.strength_score,
+                momentum_score=item.strength_score,
+                liquidity_score=self._amount_activity_score(item.total_amount),
+                breadth_score=50,
+                limit_up_count=item.limit_up_count,
+                strong_stock_count=item.advanced_count,
+                stock_count=item.limit_up_count,
+                rise_count=item.limit_up_count,
+                total_amount=item.total_amount,
+                core_stocks=list(item.core_stocks),
+                reasons=["涨停池强度靠前"],
+                risks=list(dict.fromkeys([source_note, *item.risk_tags])) if source_note else list(item.risk_tags),
+            )
+            for item in sector_strength
+        ]
+        sector_score_map = {item.sector_name: item.heat_score for item in sectors}
+        candidates = [
+            MarketRadarCandidate(
+                code=item.code,
+                name=item.name,
+                industry=item.industry,
+                latest_price=item.latest_price,
+                change_percent=item.change_percent,
+                turnover_rate=item.turnover_rate,
+                amount=item.amount,
+                candidate_score=round(
+                    self._clamp_score(item.board_quality_score * 0.58 + sector_score_map.get(item.industry, 0) * 0.42),
+                    2,
+                ),
+                sector_heat_score=round(sector_score_map.get(item.industry, 0), 2),
+                signal_type="limit_up",
+                reasons=["涨停池入选", "所属板块在涨停池中靠前"],
+                risks=list(dict.fromkeys([source_note, *item.tags])) if source_note else list(item.tags),
+                tags=["涨停确认", f"{item.consecutive_boards}板"],
+            )
+            for item in pool
+        ]
+        return sectors, sorted(candidates, key=lambda item: item.candidate_score, reverse=True)[:candidate_limit]
 
     def limit_up_pool(self, trading_date: Optional[str] = None, refresh: bool = False) -> List[LimitUpStock]:
         normalized_date = self._normalize_date(trading_date)
@@ -558,6 +908,18 @@ class MarketReviewService:
         created_at, value, status = cached
         if monotonic() - created_at > self.cache_ttl_seconds:
             self._review_cache.pop(normalized_date, None)
+            return None
+        if expected_status == SNAPSHOT_FINAL and status != SNAPSHOT_FINAL:
+            return None
+        return value
+
+    def _get_cached_radar(self, normalized_date: str, expected_status: str) -> Optional[MarketRadarData]:
+        cached = self._radar_cache.get(normalized_date)
+        if not cached:
+            return None
+        created_at, value, status = cached
+        if monotonic() - created_at > self.cache_ttl_seconds:
+            self._radar_cache.pop(normalized_date, None)
             return None
         if expected_status == SNAPSHOT_FINAL and status != SNAPSHOT_FINAL:
             return None
@@ -1195,6 +1557,22 @@ class MarketReviewService:
         return 45.0
 
     @staticmethod
+    def _amount_activity_score(amount: float) -> float:
+        if amount >= 5_000_000_000:
+            return 96.0
+        if amount >= 2_000_000_000:
+            return 84.0
+        if amount >= 1_000_000_000:
+            return 70.0
+        if amount >= 300_000_000:
+            return 56.0
+        if amount >= 50_000_000:
+            return 42.0
+        if amount > 0:
+            return 28.0
+        return 36.0
+
+    @staticmethod
     def _limit_up_percent_threshold(row: Dict[str, Any]) -> float:
         name = str(MarketReviewService._pick(row, "名称", "name", "股票简称", default="") or "")
         code = str(MarketReviewService._pick(row, "代码", "code", "股票代码", default="") or "")
@@ -1346,6 +1724,24 @@ class MarketReviewService:
             if name in row:
                 return row[name]
         return default
+
+    @staticmethod
+    def _normalize_sector_name(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text or text.lower() == "nan" or text in {"-", "--"}:
+            return ""
+        return text
+
+    @staticmethod
+    def _is_excluded_stock_name(name: str) -> bool:
+        text = name.strip().upper()
+        return (
+            not text
+            or "退" in text
+            or text.startswith("ST")
+            or text.startswith("*ST")
+            or text.startswith("SST")
+        )
 
     @staticmethod
     def _to_float(value: Any) -> Optional[float]:

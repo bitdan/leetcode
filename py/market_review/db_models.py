@@ -126,6 +126,61 @@ class MarketReviewSignal(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
 
+class MarketRadarSectorSnapshot(Base):
+    __tablename__ = "market_radar_sector_snapshot"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "sector_type", "sector_name", name="uq_market_radar_sector_date_type_name"),
+        Index("idx_market_radar_sector_date_score", "trade_date", "heat_score"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sector_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    sector_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'industry'"))
+    heat_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    momentum_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    liquidity_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    breadth_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    limit_up_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    strong_stock_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    stock_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    rise_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    change_percent: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, server_default=text("0"))
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, server_default=text("0"))
+    core_stocks: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    reasons: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    risks: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+
+class MarketRadarCandidateSnapshot(Base):
+    __tablename__ = "market_radar_candidate_snapshot"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "code", "signal_type", name="uq_market_radar_candidate_date_code_signal"),
+        Index("idx_market_radar_candidate_date_score", "trade_date", "candidate_score"),
+        Index("idx_market_radar_candidate_date_industry", "trade_date", "industry"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    industry: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("''"))
+    latest_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    change_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    turnover_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    candidate_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    sector_heat_score: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, server_default=text("0"))
+    signal_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'sector_strength'"))
+    reasons: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    risks: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
+
+
 class MarketStockKlineDaily(Base):
     __tablename__ = "market_stock_kline_daily"
     __table_args__ = (

@@ -109,6 +109,60 @@ CREATE TABLE IF NOT EXISTS market_review_signal
 CREATE INDEX IF NOT EXISTS idx_market_review_signal_date_type_score
     ON market_review_signal (trade_date, signal_type, signal_score);
 
+CREATE TABLE IF NOT EXISTS market_radar_sector_snapshot
+(
+    id BIGSERIAL PRIMARY KEY,
+    trade_date DATE NOT NULL,
+    sector_name VARCHAR(64) NOT NULL,
+    sector_type VARCHAR(32) NOT NULL DEFAULT 'industry',
+    heat_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    momentum_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    liquidity_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    breadth_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    limit_up_count INTEGER NOT NULL DEFAULT 0,
+    strong_stock_count INTEGER NOT NULL DEFAULT 0,
+    stock_count INTEGER NOT NULL DEFAULT 0,
+    rise_count INTEGER NOT NULL DEFAULT 0,
+    change_percent NUMERIC(10, 4) NOT NULL DEFAULT 0,
+    total_amount NUMERIC(20, 2) NOT NULL DEFAULT 0,
+    core_stocks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    risks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_market_radar_sector_date_type_name UNIQUE (trade_date, sector_type, sector_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_radar_sector_date_score
+    ON market_radar_sector_snapshot (trade_date, heat_score);
+
+CREATE TABLE IF NOT EXISTS market_radar_candidate_snapshot
+(
+    id BIGSERIAL PRIMARY KEY,
+    trade_date DATE NOT NULL,
+    code VARCHAR(16) NOT NULL,
+    name VARCHAR(64) NOT NULL,
+    industry VARCHAR(64) NOT NULL DEFAULT '',
+    latest_price NUMERIC(18, 4),
+    change_percent NUMERIC(10, 4),
+    turnover_rate NUMERIC(10, 4),
+    amount NUMERIC(20, 2),
+    candidate_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    sector_heat_score NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    signal_type VARCHAR(64) NOT NULL DEFAULT 'sector_strength',
+    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    risks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_market_radar_candidate_date_code_signal UNIQUE (trade_date, code, signal_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_radar_candidate_date_score
+    ON market_radar_candidate_snapshot (trade_date, candidate_score);
+CREATE INDEX IF NOT EXISTS idx_market_radar_candidate_date_industry
+    ON market_radar_candidate_snapshot (trade_date, industry);
+
 CREATE TABLE IF NOT EXISTS market_stock_kline_daily
 (
     id BIGSERIAL PRIMARY KEY,

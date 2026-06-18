@@ -85,6 +85,48 @@ class MarketReviewData(BaseModel):
     market_environment: Optional[MarketEnvironment] = None
 
 
+class MarketRadarSector(BaseModel):
+    sector_name: str
+    sector_type: str = "industry"
+    heat_score: float = 0
+    momentum_score: float = 0
+    liquidity_score: float = 0
+    breadth_score: float = 0
+    limit_up_count: int = 0
+    strong_stock_count: int = 0
+    stock_count: int = 0
+    rise_count: int = 0
+    change_percent: float = 0
+    total_amount: float = 0
+    core_stocks: List[str] = Field(default_factory=list)
+    reasons: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+
+
+class MarketRadarCandidate(BaseModel):
+    code: str
+    name: str
+    industry: str = ""
+    latest_price: Optional[float] = None
+    change_percent: Optional[float] = None
+    turnover_rate: Optional[float] = None
+    amount: Optional[float] = None
+    candidate_score: float = 0
+    sector_heat_score: float = 0
+    signal_type: str = "sector_strength"
+    reasons: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+
+
+class MarketRadarData(BaseModel):
+    date: str
+    market_environment: Optional[MarketEnvironment] = None
+    sectors: List[MarketRadarSector] = Field(default_factory=list)
+    candidates: List[MarketRadarCandidate] = Field(default_factory=list)
+    generated_at: str = ""
+
+
 class StockKlineBar(BaseModel):
     trade_date: str
     open_price: float

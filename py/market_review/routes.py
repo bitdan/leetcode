@@ -59,6 +59,26 @@ def create_router(container) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
+    @router.get("/radar", response_model=ApiResponse)
+    async def radar(
+            date: str = Query(default=""),
+            refresh: bool = Query(default=False),
+            sector_limit: int = Query(default=20, ge=1, le=60),
+            candidate_limit: int = Query(default=80, ge=1, le=200),
+    ):
+        try:
+            data = service.market_radar(
+                date or None,
+                refresh=refresh,
+                sector_limit=sector_limit,
+                candidate_limit=candidate_limit,
+            )
+            return ApiResponse(code=200, msg="获取市场雷达成功", data=dump_model(data))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except MarketReviewUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
+
     @router.get("/limit-up-pool", response_model=ApiResponse)
     async def limit_up_pool(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:

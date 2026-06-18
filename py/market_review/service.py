@@ -17,6 +17,7 @@ from market_review.schemas import (
     MarketRadarCandidate,
     MarketRadarData,
     MarketRadarSector,
+    MarketRadarSectorStock,
     MarketReviewData,
     SectorStrength,
     StockKlineBar,
@@ -114,6 +115,61 @@ class MarketReviewService:
                 logger.warning("Market radar snapshot save skipped for %s: %s", normalized_date, exc)
         self._radar_cache[normalized_date] = (monotonic(), radar, snapshot_status)
         return radar
+
+    def radar_sector_stocks(
+            self,
+            sector_name: str,
+            trading_date: Optional[str] = None,
+            refresh: bool = False,
+            limit: int = 300,
+    ) -> List[MarketRadarSectorStock]:
+        normalized_date = self._normalize_date(trading_date)
+        normalized_sector = self._normalize_sector_name(sector_name)
+        if not normalized_sector:
+            raise ValueError("板块名称不能为空")
+        radar = self.market_radar(normalized_date, refresh=refresh)
+        sector_score = next(
+            (item.heat_score for item in radar.sectors if item.sector_name == normalized_sector),
+            0,
+        )
+        normalized_limit = max(1, min(limit, 500))
+        pool = self.review(normalized_date, refresh=False).limit_up_pool
+        limit_up_by_code = {item.code: item for item in pool}
+
+        if normalized_date == self._now().strftime("%Y-%m-%d"):
+            try:
+                rows = self._fetch_market_spot_rows()
+                stocks = [
+                    self._build_sector_stock(row, normalized_sector, sector_score, limit_up_by_code)
+                    for row in rows
+                ]
+                result = [item for item in stocks if item is not None]
+                result.sort(key=lambda item: (item.stock_score, item.amount or 0), reverse=True)
+                return result[:normalized_limit]
+            except Exception as exc:
+                logger.warning("Market radar sector stock spot fetch skipped for %s/%s: %s",
+                               normalized_date, normalized_sector, exc)
+
+        fallback = [
+            MarketRadarSectorStock(
+                code=item.code,
+                name=item.name,
+                industry=item.industry,
+                latest_price=item.latest_price,
+                change_percent=item.change_percent,
+                turnover_rate=item.turnover_rate,
+                amount=item.amount,
+                sector_heat_score=round(sector_score, 2),
+                stock_score=round(self._clamp_score(item.board_quality_score * 0.62 + sector_score * 0.38), 2),
+                reasons=["历史/快照降级，仅展示该板块涨停池标的"],
+                risks=list(item.tags),
+                tags=["涨停确认", f"{item.consecutive_boards}板"],
+            )
+            for item in pool
+            if (item.industry or "未分类") == normalized_sector
+        ]
+        fallback.sort(key=lambda item: (item.stock_score, item.amount or 0), reverse=True)
+        return fallback[:normalized_limit]
 
     def _build_review(self, normalized_date: str, refresh: bool = False) -> MarketReviewData:
         pool = self.limit_up_pool(normalized_date, refresh=refresh)
@@ -384,6 +440,75 @@ class MarketReviewService:
             sector_heat_score=round(sector_heat, 2),
             signal_type="limit_up" if code in limit_up_by_code else "sector_strength",
             reasons=list(dict.fromkeys(reasons)),
+            risks=list(dict.fromkeys(risks)),
+            tags=list(dict.fromkeys(tags)),
+        )
+
+    def _build_sector_stock(
+            self,
+            row: dict,
+            target_sector: str,
+            sector_heat: float,
+            limit_up_by_code: Dict[str, LimitUpStock],
+    ) -> Optional[MarketRadarSectorStock]:
+        code = self._normalize_code(str(self._pick(row, "代码", "code", "股票代码", default="")))
+        name = str(self._pick(row, "名称", "name", "股票简称", default="") or "").strip()
+        if not code or not name or self._is_excluded_stock_name(name):
+            return None
+        industry = self._normalize_sector_name(self._pick(row, "所属行业", "行业", "industry", default="")) or "未分类"
+        if industry != target_sector:
+            return None
+
+        change = self._to_float(self._pick(row, "涨跌幅", "change_percent"))
+        amount = self._to_float(self._pick(row, "成交额", "amount"))
+        turnover = self._to_float(self._pick(row, "换手率", "turnover_rate"))
+        latest_price = self._to_float(self._pick(row, "最新价", "收盘价", "close", "price"))
+        momentum_score = self._ratio_score(
+            change,
+            [(9.5, 96), (6.0, 86), (3.0, 74), (1.0, 58), (0.0, 42), (-3.0, 24), (-100.0, 10)],
+        )
+        amount_score = self._amount_activity_score(amount or 0)
+        turnover_score = self._band_score(turnover or 0, 1.0, 18.0, 35.0) if turnover is not None else 42
+        limit_bonus = 10 if code in limit_up_by_code else 0
+        score = self._clamp_score(
+            sector_heat * 0.25
+            + momentum_score * 0.35
+            + amount_score * 0.25
+            + turnover_score * 0.15
+            + limit_bonus
+        )
+
+        reasons = []
+        risks = []
+        tags = []
+        if change is not None and change > 0:
+            reasons.append("跟随板块上涨")
+        if amount is not None and amount >= 100000000:
+            reasons.append("成交额活跃")
+            tags.append("资金活跃")
+        if turnover is not None and 2 <= turnover <= 18:
+            reasons.append("换手处于观察区间")
+        if code in limit_up_by_code:
+            tags.append("涨停确认")
+            risks.extend(limit_up_by_code[code].tags)
+        if change is not None and change <= -3:
+            risks.append("逆板块走弱")
+        if turnover is not None and turnover > 30:
+            risks.append("换手过高")
+        if amount is not None and amount < 20000000:
+            risks.append("成交额偏低")
+
+        return MarketRadarSectorStock(
+            code=code,
+            name=name,
+            industry=industry,
+            latest_price=latest_price,
+            change_percent=change,
+            turnover_rate=turnover,
+            amount=amount,
+            sector_heat_score=round(sector_heat, 2),
+            stock_score=round(score, 2),
+            reasons=list(dict.fromkeys(reasons or ["板块成分股"])),
             risks=list(dict.fromkeys(risks)),
             tags=list(dict.fromkeys(tags)),
         )
@@ -826,6 +951,14 @@ class MarketReviewService:
             if use_stored_bars and self.store and self.store.is_available():
                 try:
                     bars = self.store.get_stock_kline_daily(normalized_code, normalized_limit, normalized_date)
+                    if bars and not self._daily_bars_cover_date(bars, normalized_date):
+                        logger.info(
+                            "Stored daily kline is stale for %s, latest=%s, requested=%s",
+                            normalized_code,
+                            bars[-1].trade_date,
+                            normalized_date,
+                        )
+                        bars = []
                 except MarketReviewStoreUnavailable as exc:
                     logger.warning("Market review daily kline load skipped for %s: %s", normalized_code, exc)
 
@@ -2215,6 +2348,13 @@ class MarketReviewService:
         if not previous_bars:
             return daily_bars[-2].close_price
         return previous_bars[-1].close_price
+
+    @staticmethod
+    def _daily_bars_cover_date(bars: List[StockKlineBar], normalized_date: str) -> bool:
+        if not bars:
+            return False
+        latest_date = max(item.trade_date[:10] for item in bars if item.trade_date)
+        return latest_date >= normalized_date
 
     @staticmethod
     def _compute_limit_up_price(code: str, previous_close: float) -> float:

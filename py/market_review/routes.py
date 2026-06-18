@@ -79,6 +79,29 @@ def create_router(container) -> APIRouter:
         except MarketReviewUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
 
+    @router.get("/radar/sectors/{sector_name}/stocks", response_model=ApiResponse)
+    async def radar_sector_stocks(
+            sector_name: str,
+            date: str = Query(default=""),
+            refresh: bool = Query(default=False),
+            limit: int = Query(default=300, ge=1, le=500),
+    ):
+        try:
+            data = [
+                dump_model(item)
+                for item in service.radar_sector_stocks(
+                    sector_name,
+                    date or None,
+                    refresh=refresh,
+                    limit=limit,
+                )
+            ]
+            return ApiResponse(code=200, msg="获取板块成分股成功", data=data)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except MarketReviewUnavailable as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=public_error(exc))
+
     @router.get("/limit-up-pool", response_model=ApiResponse)
     async def limit_up_pool(date: str = Query(default=""), refresh: bool = Query(default=False)):
         try:

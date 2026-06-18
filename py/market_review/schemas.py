@@ -119,6 +119,21 @@ class MarketRadarCandidate(BaseModel):
     tags: List[str] = Field(default_factory=list)
 
 
+class MarketRadarSectorStock(BaseModel):
+    code: str
+    name: str
+    industry: str = ""
+    latest_price: Optional[float] = None
+    change_percent: Optional[float] = None
+    turnover_rate: Optional[float] = None
+    amount: Optional[float] = None
+    sector_heat_score: float = 0
+    stock_score: float = 0
+    reasons: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+
+
 class MarketRadarData(BaseModel):
     date: str
     market_environment: Optional[MarketEnvironment] = None

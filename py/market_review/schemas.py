@@ -129,9 +129,18 @@ class MarketRadarSectorStock(BaseModel):
     amount: Optional[float] = None
     sector_heat_score: float = 0
     stock_score: float = 0
+    trend_score: float = 0
+    volume_score: float = 0
+    relative_strength_score: float = 0
+    ma_state: str = ""
+    return_5d: Optional[float] = None
+    return_10d: Optional[float] = None
+    return_20d: Optional[float] = None
+    volume_ratio_5d: Optional[float] = None
     reasons: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+    trend_tags: List[str] = Field(default_factory=list)
 
 
 class MarketRadarData(BaseModel):

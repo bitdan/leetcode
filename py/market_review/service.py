@@ -144,6 +144,7 @@ class MarketReviewService:
                     for row in rows
                 ]
                 result = [item for item in stocks if item is not None]
+                self._enrich_sector_stocks_with_trend(result, normalized_date)
                 result.sort(key=lambda item: (item.stock_score, item.amount or 0), reverse=True)
                 return result[:normalized_limit]
             except Exception as exc:
@@ -168,6 +169,7 @@ class MarketReviewService:
             for item in pool
             if (item.industry or "未分类") == normalized_sector
         ]
+        self._enrich_sector_stocks_with_trend(fallback, normalized_date)
         fallback.sort(key=lambda item: (item.stock_score, item.amount or 0), reverse=True)
         return fallback[:normalized_limit]
 
@@ -512,6 +514,216 @@ class MarketReviewService:
             risks=list(dict.fromkeys(risks)),
             tags=list(dict.fromkeys(tags)),
         )
+
+    def _enrich_sector_stocks_with_trend(
+            self,
+            stocks: List[MarketRadarSectorStock],
+            normalized_date: str,
+    ) -> None:
+        if not stocks:
+            return
+
+        for stock in stocks:
+            metrics = self._stock_trend_metrics(stock.code, normalized_date)
+            if not metrics:
+                stock.trend_score = 45
+                stock.volume_score = 36
+                stock.relative_strength_score = 45
+                stock.risks = list(dict.fromkeys([*stock.risks, "K线不足"]))
+                continue
+            stock.trend_score = metrics["trend_score"]
+            stock.volume_score = metrics["volume_score"]
+            stock.ma_state = metrics["ma_state"]
+            stock.return_5d = metrics["return_5d"]
+            stock.return_10d = metrics["return_10d"]
+            stock.return_20d = metrics["return_20d"]
+            stock.volume_ratio_5d = metrics["volume_ratio_5d"]
+            stock.trend_tags = list(metrics["trend_tags"])
+            stock.risks = list(dict.fromkeys([*stock.risks, *metrics["risks"]]))
+
+        sector_avg_5d = self._average_optional([item.return_5d for item in stocks])
+        sector_avg_10d = self._average_optional([item.return_10d for item in stocks])
+
+        for stock in stocks:
+            strength_gap = None
+            if stock.return_5d is not None and sector_avg_5d is not None:
+                strength_gap = stock.return_5d - sector_avg_5d
+            elif stock.return_10d is not None and sector_avg_10d is not None:
+                strength_gap = stock.return_10d - sector_avg_10d
+            stock.relative_strength_score = self._ratio_score(
+                strength_gap,
+                [(6.0, 96), (3.0, 84), (1.2, 70), (0.0, 56), (-2.0, 38), (-100.0, 18)],
+            )
+            if strength_gap is not None:
+                if strength_gap >= 1.2:
+                    stock.trend_tags = list(dict.fromkeys([*stock.trend_tags, "跑赢板块"]))
+                    stock.reasons = list(dict.fromkeys([*stock.reasons, "相对板块强"]))
+                elif strength_gap <= -2:
+                    stock.risks = list(dict.fromkeys([*stock.risks, "弱于板块"]))
+
+            spot_momentum = self._ratio_score(
+                stock.change_percent,
+                [(9.5, 96), (6.0, 86), (3.0, 74), (1.0, 58), (0.0, 42), (-3.0, 24), (-100.0, 10)],
+            )
+            limit_bonus = 8 if "涨停确认" in stock.tags else 0
+            risk_penalty = 8 if "K线不足" in stock.risks else 0
+            stock.stock_score = round(self._clamp_score(
+                stock.sector_heat_score * 0.20
+                + stock.trend_score * 0.30
+                + stock.relative_strength_score * 0.25
+                + stock.volume_score * 0.15
+                + spot_momentum * 0.10
+                + limit_bonus
+                - risk_penalty
+            ), 2)
+
+    def _stock_trend_metrics(self, code: str, normalized_date: str) -> Optional[dict]:
+        if not self.store or not self.store.is_available():
+            return None
+        try:
+            bars = self.store.get_stock_kline_daily(code, 80, normalized_date)
+        except MarketReviewStoreUnavailable as exc:
+            logger.warning("Market radar stock trend load skipped for %s: %s", code, exc)
+            return None
+        if len(bars) < 21:
+            return None
+
+        bars = sorted([item for item in bars if item.trade_date <= normalized_date], key=lambda item: item.trade_date)
+        if len(bars) < 21:
+            return None
+
+        latest = bars[-1]
+        closes = [item.close_price for item in bars]
+        volumes = [item.volume or 0 for item in bars]
+        close = latest.close_price
+        ma5 = self._tail_average(closes, 5)
+        ma10 = self._tail_average(closes, 10)
+        ma20 = self._tail_average(closes, 20)
+        ma60 = self._tail_average(closes, 60)
+        return_5d = self._window_return(closes, 5)
+        return_10d = self._window_return(closes, 10)
+        return_20d = self._window_return(closes, 20)
+        volume_ratio_5d = self._latest_volume_ratio(volumes, 5)
+        trend_tags: List[str] = []
+        risks: List[str] = []
+        score = 45.0
+
+        if ma20 and close >= ma20:
+            score += 14
+            trend_tags.append("站上20日线")
+        elif ma20:
+            score -= 12
+            risks.append("20日线下")
+
+        if ma5 and ma10 and ma20 and close >= ma5 >= ma10 >= ma20:
+            score += 22
+            trend_tags.append("均线多头")
+        elif ma5 and ma10 and close >= ma10 and ma5 >= ma10:
+            score += 10
+            trend_tags.append("短均线走强")
+
+        recent_high_20 = max(closes[-20:])
+        recent_low_20 = min(closes[-20:])
+        if close >= recent_high_20 * 0.98:
+            score += 12
+            trend_tags.append("接近20日高位")
+        if close <= recent_low_20 * 1.03:
+            score -= 10
+            risks.append("接近20日低位")
+
+        if return_5d is not None and return_5d > 0:
+            score += min(return_5d, 8)
+        if return_20d is not None and return_20d > 0:
+            score += min(return_20d * 0.35, 8)
+        if volume_ratio_5d is not None:
+            if 1.2 <= volume_ratio_5d <= 2.8:
+                trend_tags.append("温和放量")
+            elif volume_ratio_5d > 3.5:
+                risks.append("放量过急")
+            elif volume_ratio_5d < 0.65:
+                risks.append("量能不足")
+
+        latest_date = latest.trade_date[:10]
+        if latest_date < normalized_date:
+            risks.append("K线未含当日")
+            try:
+                gap_days = (datetime.strptime(normalized_date, "%Y-%m-%d") -
+                            datetime.strptime(latest_date, "%Y-%m-%d")).days
+                if gap_days >= 7:
+                    risks.append("K线偏旧")
+            except ValueError:
+                pass
+
+        ma_state = "均线不足"
+        if ma5 and ma10 and ma20:
+            if close >= ma5 >= ma10 >= ma20:
+                ma_state = "多头"
+            elif close >= ma20:
+                ma_state = "站上20日"
+            else:
+                ma_state = "20日线下"
+        return {
+            "trend_score": round(self._clamp_score(score), 2),
+            "volume_score": round(self._volume_ratio_score(volume_ratio_5d), 2),
+            "ma_state": ma_state,
+            "return_5d": return_5d,
+            "return_10d": return_10d,
+            "return_20d": return_20d,
+            "volume_ratio_5d": volume_ratio_5d,
+            "trend_tags": list(dict.fromkeys(trend_tags)),
+            "risks": list(dict.fromkeys(risks)),
+            "ma60": ma60,
+        }
+
+    @staticmethod
+    def _tail_average(values: List[float], window: int) -> Optional[float]:
+        if len(values) < window:
+            return None
+        segment = values[-window:]
+        return round(sum(segment) / window, 4)
+
+    @staticmethod
+    def _window_return(values: List[float], window: int) -> Optional[float]:
+        if len(values) <= window:
+            return None
+        base = values[-window - 1]
+        if base <= 0:
+            return None
+        return round(((values[-1] / base) - 1) * 100, 4)
+
+    @staticmethod
+    def _latest_volume_ratio(values: List[float], window: int) -> Optional[float]:
+        if len(values) <= window:
+            return None
+        latest = values[-1]
+        previous = values[-window - 1:-1]
+        average = sum(previous) / len(previous) if previous else 0
+        if average <= 0:
+            return None
+        return round(latest / average, 4)
+
+    @staticmethod
+    def _average_optional(values: List[Optional[float]]) -> Optional[float]:
+        available = [item for item in values if item is not None]
+        if not available:
+            return None
+        return sum(available) / len(available)
+
+    @staticmethod
+    def _volume_ratio_score(value: Optional[float]) -> float:
+        if value is None:
+            return 45.0
+        if 1.2 <= value <= 2.8:
+            return 86.0
+        if 0.8 <= value < 1.2:
+            return 66.0
+        if 2.8 < value <= 4.0:
+            return 62.0
+        if 0.5 <= value < 0.8:
+            return 42.0
+        if value > 4.0:
+            return 38.0
+        return 28.0
 
     def _radar_from_limit_up_pool(
             self,

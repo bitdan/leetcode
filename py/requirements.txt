@@ -3,7 +3,7 @@ langchain-openai
 langchain-community
 langgraph
 openai>=1.10.0
-pillow
+pillow>=12.3.0
 requests
 PyYAML>=6.0
 python-dotenv 
@@ -17,6 +17,6 @@ python-multipart>=0.0.6
 sqlalchemy>=2.0,<3.0
 alembic>=1.13,<2.0
 pymysql
-psycopg2-binary
+psycopg2-binary>=2.9.12
 akshare
 pandas

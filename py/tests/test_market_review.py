@@ -739,7 +739,7 @@ class MarketReviewServiceTest(unittest.TestCase):
         self.assertGreater(candidate_map["000001"].candidate_score, candidate_map["000003"].candidate_score + 20)
         self.assertNotEqual("高关注", candidate_map["000003"].level)
 
-    def test_v2_score_breakdown_is_returned(self):
+    def test_sector_strength_uses_factual_aggregation_without_score(self):
         service = MarketReviewService()
         pool = [
             LimitUpStock(
@@ -766,20 +766,15 @@ class MarketReviewServiceTest(unittest.TestCase):
                 consecutive_boards=1,
             ),
         ]
-        for item in pool:
-            item.score_breakdown = service._quality_score_breakdown(item)
-            item.board_quality_score = item.score_breakdown["score"]
-
         sectors = service.sector_strength("2026-05-22", pool)
-        candidates = service.advancement_candidates("2026-05-22", pool, sectors)
-        signals = service.divergence_consensus("2026-05-22", pool, sectors)
 
-        self.assertIn("seal_timing", pool[0].score_breakdown)
-        self.assertIn("ladder_completeness", sectors[0].score_breakdown)
-        self.assertIn("next_day_expectation", candidates[0].score_breakdown)
-        self.assertIn("divergence_quality", signals[0].score_breakdown)
+        self.assertEqual(0, sectors[0].strength_score)
+        self.assertEqual({}, sectors[0].score_breakdown)
+        self.assertEqual(2, sectors[0].limit_up_count)
+        self.assertEqual(1, sectors[0].advanced_count)
+        self.assertEqual(["龙头", "助攻"], sectors[0].core_stocks)
 
-    def test_row_to_limit_up_stock_computes_quality_breakdown_once(self):
+    def test_row_to_limit_up_stock_skips_rule_based_scoring(self):
         service = MarketReviewService()
         call_count = 0
         original = service._seal_timing_score
@@ -802,8 +797,11 @@ class MarketReviewServiceTest(unittest.TestCase):
                 "涨停统计": "2/2",
             })
 
-        self.assertEqual(1, call_count)
-        self.assertEqual(stock.board_quality_score, stock.score_breakdown["score"])
+        self.assertEqual(0, call_count)
+        self.assertEqual(0, stock.board_quality_score)
+        self.assertEqual({}, stock.score_breakdown)
+        self.assertEqual("000001", stock.code)
+        self.assertEqual(2, stock.consecutive_boards)
 
     def test_limit_up_pool_supplements_limit_price_rows_from_strong_pool(self):
         class FakeAkshare:

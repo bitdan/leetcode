@@ -175,18 +175,15 @@ class MarketReviewService:
 
     def _build_review(self, normalized_date: str, refresh: bool = False) -> MarketReviewData:
         pool = self.limit_up_pool(normalized_date, refresh=refresh)
-        environment = self.market_environment(normalized_date, pool, refresh=refresh)
-        sectors = self.sector_strength(normalized_date, pool, environment)
-        advancement_candidates = self.advancement_candidates(normalized_date, pool, sectors, environment)
-        signals = self.divergence_consensus(normalized_date, pool, sectors, environment)
+        sectors = self.sector_strength(normalized_date, pool)
         return MarketReviewData(
             date=normalized_date,
             limit_up_pool=pool,
             sector_strength=sectors,
-            advancement_candidates=advancement_candidates,
-            candidates_2_to_3=[item for item in advancement_candidates if item.pool_type == "2_to_3"],
-            divergence_consensus=signals,
-            market_environment=environment,
+            advancement_candidates=[],
+            candidates_2_to_3=[],
+            divergence_consensus=[],
+            market_environment=None,
         )
 
     def _build_market_radar(
@@ -735,22 +732,22 @@ class MarketReviewService:
         sectors = [
             MarketRadarSector(
                 sector_name=item.industry,
-                heat_score=item.strength_score,
-                momentum_score=item.strength_score,
-                liquidity_score=self._amount_activity_score(item.total_amount),
-                breadth_score=50,
+                heat_score=0,
+                momentum_score=0,
+                liquidity_score=0,
+                breadth_score=0,
                 limit_up_count=item.limit_up_count,
                 strong_stock_count=item.advanced_count,
                 stock_count=item.limit_up_count,
                 rise_count=item.limit_up_count,
                 total_amount=item.total_amount,
                 core_stocks=list(item.core_stocks),
-                reasons=["涨停池强度靠前"],
-                risks=list(dict.fromkeys([source_note, *item.risk_tags])) if source_note else list(item.risk_tags),
+                reasons=[],
+                risks=[source_note] if source_note else [],
             )
             for item in sector_strength
         ]
-        sector_score_map = {item.sector_name: item.heat_score for item in sectors}
+        pool_by_code = {item.code: item for item in pool}
         candidates = [
             MarketRadarCandidate(
                 code=item.code,
@@ -760,19 +757,24 @@ class MarketReviewService:
                 change_percent=item.change_percent,
                 turnover_rate=item.turnover_rate,
                 amount=item.amount,
-                candidate_score=round(
-                    self._clamp_score(item.board_quality_score * 0.58 + sector_score_map.get(item.industry, 0) * 0.42),
-                    2,
-                ),
-                sector_heat_score=round(sector_score_map.get(item.industry, 0), 2),
+                candidate_score=0,
+                sector_heat_score=0,
                 signal_type="limit_up",
-                reasons=["涨停池入选", "所属板块在涨停池中靠前"],
-                risks=list(dict.fromkeys([source_note, *item.tags])) if source_note else list(item.tags),
+                reasons=[],
+                risks=[source_note] if source_note else [],
                 tags=["涨停确认", f"{item.consecutive_boards}板"],
             )
             for item in pool
         ]
-        return sectors, sorted(candidates, key=lambda item: item.candidate_score, reverse=True)[:candidate_limit]
+        ordered = sorted(
+            candidates,
+            key=lambda item: (
+                pool_by_code[item.code].consecutive_boards,
+                item.amount or 0,
+            ),
+            reverse=True,
+        )
+        return sectors, ordered[:candidate_limit]
 
     def limit_up_pool(self, trading_date: Optional[str] = None, refresh: bool = False) -> List[LimitUpStock]:
         normalized_date = self._normalize_date(trading_date)
@@ -868,7 +870,6 @@ class MarketReviewService:
             environment: Optional[MarketEnvironment] = None,
     ) -> List[SectorStrength]:
         stocks = pool if pool is not None else self.limit_up_pool(trading_date)
-        env = environment or self.market_environment(trading_date, stocks)
         grouped: Dict[str, List[LimitUpStock]] = defaultdict(list)
         for stock in stocks:
             grouped[stock.industry or "未分类"].append(stock)
@@ -880,16 +881,15 @@ class MarketReviewService:
             total_seal = sum(item.seal_amount or 0 for item in items)
             total_amount = sum(item.amount or 0 for item in items)
             max_boards = max((item.consecutive_boards for item in items), default=1)
-            core = sorted(items, key=lambda item: (-item.consecutive_boards, -item.board_quality_score))[:3]
-            breakdown = self._sector_strength_breakdown(items, env)
-            score = breakdown["score"]
-            risks = []
-            if open_count >= max(2, len(items)):
-                risks.append("炸板偏多")
-            if len(items) == 1:
-                risks.append("板块跟随不足")
-            if len(core) == 1 or (core and core[0].board_quality_score - core[-1].board_quality_score > 35):
-                risks.append("核心断层明显")
+            core = sorted(
+                items,
+                key=lambda item: (
+                    item.consecutive_boards,
+                    item.seal_amount or 0,
+                    item.amount or 0,
+                ),
+                reverse=True,
+            )[:3]
             sectors.append(SectorStrength(
                 industry=industry,
                 limit_up_count=len(items),
@@ -899,11 +899,20 @@ class MarketReviewService:
                 total_amount=round(total_amount, 2),
                 open_count=open_count,
                 core_stocks=[item.name for item in core],
-                strength_score=round(max(score, 0), 2),
-                score_breakdown=breakdown,
-                risk_tags=risks,
+                strength_score=0,
+                score_breakdown={},
+                risk_tags=[],
             ))
-        return sorted(sectors, key=lambda item: item.strength_score, reverse=True)
+        return sorted(
+            sectors,
+            key=lambda item: (
+                item.limit_up_count,
+                item.advanced_count,
+                item.max_consecutive_boards,
+                item.total_seal_amount,
+            ),
+            reverse=True,
+        )
 
     def candidates_by_pool_type(
             self,
@@ -1432,10 +1441,6 @@ class MarketReviewService:
             limit_up_stat=str(self._pick(row, "涨停统计", default="")),
             raw_payload=self._json_safe(row),
         )
-        breakdown = self._quality_score_breakdown(stock)
-        stock.board_quality_score = breakdown["score"]
-        stock.score_breakdown = breakdown
-        stock.tags = self._risk_tags(stock)
         return stock
 
     def _quality_score(self, stock: LimitUpStock) -> float:

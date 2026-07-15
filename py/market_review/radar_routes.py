@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query
+from starlette.concurrency import run_in_threadpool
 
 from market_review.route_helpers import ApiResponse, dump_model, market_http_exception
 
@@ -15,11 +16,12 @@ def create_radar_router(container) -> APIRouter:
             candidate_limit: int = Query(default=80, ge=1, le=200),
     ):
         try:
-            data = service.market_radar(
+            data = await run_in_threadpool(
+                service.market_radar,
                 date or None,
-                refresh=refresh,
-                sector_limit=sector_limit,
-                candidate_limit=candidate_limit,
+                refresh,
+                sector_limit,
+                candidate_limit,
             )
             return ApiResponse(code=200, msg="获取市场雷达成功", data=dump_model(data))
         except Exception as exc:
@@ -33,18 +35,16 @@ def create_radar_router(container) -> APIRouter:
             limit: int = Query(default=300, ge=1, le=500),
     ):
         try:
-            data = [
-                dump_model(item)
-                for item in service.radar_sector_stocks(
+            stocks = await run_in_threadpool(
+                service.radar_sector_stocks,
                     sector_name,
                     date or None,
-                    refresh=refresh,
-                    limit=limit,
-                )
-            ]
+                    refresh,
+                    limit,
+            )
+            data = [dump_model(item) for item in stocks]
             return ApiResponse(code=200, msg="获取板块成分股成功", data=data)
         except Exception as exc:
             raise market_http_exception(exc)
 
     return router
-

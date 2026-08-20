@@ -145,7 +145,7 @@ The `tool-hub/` app is a Vue 3 + Vite + Vuetify frontend.
   expectations unless the request explicitly calls for a different interaction model. For example, stock charting
   should follow common brokerage/trading UI patterns such as separate time-line and candlestick views, crosshair
   inspection, standard period controls, price/volume panes, and familiar red/green market coloring.
-- For frontend verification, run `npm run build` from `tool-hub/`.
+- For frontend verification, use static checks, unit tests, and `npm run build` from `tool-hub/` only. Do not run browser automation, Playwright/E2E browser checks, take browser screenshots, open localhost pages, or otherwise perform browser-based verification.
 
 ## Python Backend Guidelines
 

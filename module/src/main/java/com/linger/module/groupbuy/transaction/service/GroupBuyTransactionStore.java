@@ -148,9 +148,6 @@ public class GroupBuyTransactionStore {
         if (orderMapper.markWaitPay(order.getId(), order.getId(), payDeadline) != 1) {
             throw new IllegalStateException("订单不在 INIT 状态, orderId=" + order.getId());
         }
-        if (groupMapper.incrementReserved(order.getGroupId()) != 1) {
-            throw new IllegalStateException("数据库团名额镜像更新失败, groupId=" + order.getGroupId());
-        }
 
         OffsetDateTime now = now();
         memberMapper.insert(GroupBuyMemberEntity.builder()
@@ -166,6 +163,12 @@ public class GroupBuyTransactionStore {
         ledgerMapper.insertIgnore(order.getActivityId(), order.getSkuId(), order.getId(),
                 "RESERVE", order.getQuantity());
         delayTaskMapper.insertIgnore(GroupBuyDelayTaskType.PAYMENT_TIMEOUT, order.getId(), payDeadline);
+
+        // 同一团的计数行是高并发热点。放到事务最后更新，使请求拿到 PostgreSQL 行锁后尽快提交，
+        // 避免持锁期间继续执行成员、流水和延迟任务 SQL，降低同团下单时的锁队列长度。
+        if (groupMapper.incrementReserved(order.getGroupId()) != 1) {
+            throw new IllegalStateException("数据库团名额镜像更新失败, groupId=" + order.getGroupId());
+        }
     }
 
     public boolean rejectInitOrder(String orderId, String reason) {

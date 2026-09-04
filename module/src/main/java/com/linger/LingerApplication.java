@@ -16,6 +16,7 @@ import java.net.UnknownHostException;
  * @date 2025/7/10 10:14:35
  */
 @Slf4j
+@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
 /*
  * MyBatis-Plus 和 PostgreSQL 驱动存在时，Spring Boot 会尝试自动创建默认数据源；但拼团交易引擎是可选
  * 模块，未启用或未配置数据库时，自动装配会因缺少 spring.datasource.url 而导致应用启动失败，因此这里
@@ -31,7 +32,6 @@ import java.net.UnknownHostException;
   → 创建 HikariDataSource
   → 创建事务管理器和 MyBatis Mapper
  */
-@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
 public class LingerApplication {
     public static void main(String[] args) throws UnknownHostException {
         ConfigurableApplicationContext applicationContext = SpringApplication.run(LingerApplication.class, args);

@@ -11,3 +11,10 @@ spring:
     database: 0 # 数据库索引
     redisson:
       file: classpath:redisson-local.yml
+
+# 本地拼团交易引擎配置。连接串中的 %40 会在创建数据源时解码为密码里的 @。
+groupbuy:
+  transaction:
+    enabled: true
+    datasource:
+      postgres-dsn: "postgresql://root:dudu0.0%40@43.156.83.246:5432/tool_hub"

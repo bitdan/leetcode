@@ -25,12 +25,13 @@
         <pdfbox.version>2.0.30</pdfbox.version>
         <lock4j.version>2.2.7</lock4j.version>
         <redisson.version>3.21.3</redisson.version>
-        <spring-tx.version>5.3.28</spring-tx.version>
+        <spring-tx.version>5.3.31</spring-tx.version>
         <lombok.version>1.18.20</lombok.version>
         <slf4j.version>1.7.36</slf4j.version>
         <okhttp.version>4.12.0</okhttp.version>
         <jackson.version>2.13.5</jackson.version>
         <hutool.version>5.8.35</hutool.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
     </properties>
 
     <parent>
@@ -41,6 +42,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-bom</artifactId>
+                <version>${mybatis-plus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- PDF 操作 -->
             <dependency>
                 <groupId>org.apache.pdfbox</groupId>

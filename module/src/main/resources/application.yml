@@ -2,6 +2,24 @@ spring:
   profiles:
     active: @profile.active@
 
+groupbuy:
+  transaction:
+    # 默认关闭，避免未配置 PostgreSQL 时影响现有模块；启用后才注册数据源、Mapper 和交易接口。
+    enabled: ${GROUPBUY_TRANSACTION_ENABLED:false}
+    datasource:
+      jdbc-url: ${GROUPBUY_POSTGRES_JDBC_URL:}
+      postgres-dsn: ${POSTGRES_DSN:}
+      username: ${GROUPBUY_POSTGRES_USERNAME:}
+      password: ${GROUPBUY_POSTGRES_PASSWORD:}
+      maximum-pool-size: ${GROUPBUY_POSTGRES_POOL_SIZE:20}
+      minimum-idle: ${GROUPBUY_POSTGRES_MIN_IDLE:2}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
 server:
   port: 9999
   undertow:

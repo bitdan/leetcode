@@ -17,6 +17,7 @@ from market_review.store import MarketReviewStore
 from mcp_server.registry import create_default_tool_registry
 from post.service import PostService
 from post.store import PostStore
+from rag_lab.service import RagLabService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class Container:
     market_review_service: MarketReviewService
     agent_chat_service: AgentChatService
     agent_eval_service: AgentEvalService
+    rag_lab_service: RagLabService
     mcp_tool_registry: dict
 
 
@@ -82,6 +84,7 @@ def build_container(settings: Settings) -> Container:
             openai_api_base=settings.openai_api_base,
         ),
         agent_eval_service=AgentEvalService(AgentEvalStore(settings.postgres_dsn), model_name="gpt-3.5-turbo"),
+        rag_lab_service=RagLabService(),
         mcp_tool_registry=create_default_tool_registry(),
     )
 

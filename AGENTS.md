@@ -13,7 +13,8 @@ Key paths:
 
 ## Build, Test, and Development Commands
 
-Use Maven from the repo root:
+Use Maven from the repo root. On this machine Maven is installed at `D:\app\apache-maven-3.6.3`; if `mvn` is not on
+`PATH`, run `D:\app\apache-maven-3.6.3\bin\mvn.cmd` instead.
 
 1. `mvn -pl module -am clean package` — build the main module and its dependencies.
 2. `mvn -pl module -am test` — run tests for the main module.

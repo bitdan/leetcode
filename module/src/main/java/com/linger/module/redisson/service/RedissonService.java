@@ -4,10 +4,12 @@ import com.linger.module.redisson.model.DelayMessageRequest;
 import com.linger.module.redisson.model.DelayTaskMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.RedissonShutdownException;
 import org.redisson.api.*;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
@@ -31,6 +33,9 @@ public class RedissonService {
 
 
     private static final String QUEUE_NAME = "delay:msg";
+
+    private volatile boolean delayConsumerRunning;
+    private Thread delayConsumerThread;
 
     public String grabTask(String userId) {
         RLock lock = redissonClient.getLock("lock:grab:" + userId);
@@ -77,17 +82,38 @@ public class RedissonService {
     @PostConstruct
     public void consumedMsg() {
         log.info("开始处理 延时消息");
-        new Thread(() -> {
+        delayConsumerRunning = true;
+        delayConsumerThread = new Thread(() -> {
             RBlockingDeque<DelayTaskMessage> blockingDeque = redissonClient.getBlockingDeque(QUEUE_NAME);
-            while (true) {
+            while (delayConsumerRunning && !redissonClient.isShuttingDown()) {
                 try {
                     DelayTaskMessage task = blockingDeque.take(); // 阻塞直到有消息
                     log.info("处理延迟任务: id={}, type={}", task.getId(), task.getType());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (delayConsumerRunning) {
+                        log.warn("延时消息消费者线程被中断", e);
+                    }
+                    break;
+                } catch (RedissonShutdownException e) {
+                    if (delayConsumerRunning) {
+                        log.warn("Redisson 已关闭，停止延时消息消费者", e);
+                    }
+                    break;
                 } catch (Exception e) {
                     log.error("处理延时消息异常", e);
                 }
             }
-        }, "delay-consumer").start();
+        }, "delay-consumer");
+        delayConsumerThread.start();
+    }
+
+    @PreDestroy
+    public void stopDelayConsumer() {
+        delayConsumerRunning = false;
+        if (delayConsumerThread != null) {
+            delayConsumerThread.interrupt();
+        }
     }
 
 
